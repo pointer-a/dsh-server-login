@@ -79,8 +79,8 @@ spawn(dshBinPath, ['--profile', 'web', '--patch', mainPatchPath, '--cwd', worksp
 
 ## 7. 安全模型
 
-见 [security-model.md](security-model.md)。
+默认软隔离（每用户 `$DSH_HOME` + session `cwd` + 沙箱写隔离）；Linux 生产建议开启账号级硬隔离（每用户 OS 账号）。详见 [deployment.md](deployment.md)。
 
 ## 8. 分阶段路线
 
-见 [roadmap.md](roadmap.md)。
+P1–P7 已完成：登录审核、桌面/FS、单 DSH 启动、每文件夹插件、守护/双 DSH、域名/nginx、硬隔离。

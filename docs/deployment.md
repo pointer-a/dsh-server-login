@@ -143,7 +143,7 @@ systemctl daemon-reload && systemctl enable --now dsh-server-login
 - 不要给子 DSH 开放 `0.0.0.0` 或公网端口。
 - 会话 cookie 在 HTTPS 下必须 `Secure`（第 4 节已设）。
 - 自定义域名归属校验（ACME/DNS）落地前，不要开放 `PUT /api/domain` 给普通用户随意映射。
-- 账号级隔离闭合了同 UID 越权读，但容器级（私有挂载命名空间、只读 rootfs）是更强的后续选项，见 [docs/security-model.md](security-model.md)。
+- 账号级隔离闭合了同 UID 越权读，但容器级（私有挂载命名空间、只读 rootfs）是更强的后续选项。
 
 ## 10. 已知待办（真实 harness 集成时）
 

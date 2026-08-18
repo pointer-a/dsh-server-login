@@ -7,3 +7,9 @@ dist-web/
 *.db-shm
 *.local.db
 .DS_Store
+
+# 内部开发文档（不公开）
+设计初稿.md
+docs/security-model.md
+docs/performance.md
+docs/roadmap.md

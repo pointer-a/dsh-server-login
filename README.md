@@ -55,15 +55,12 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 ## 文档
 
 - [docs/blueprint.md](docs/blueprint.md) — 技术设计（拓扑 / 数据模型 / API / 双 DSH）
-- [docs/security-model.md](docs/security-model.md) — 安全模型与隔离等级
 - [docs/deployment.md](docs/deployment.md) — Linux 生产部署（账号级隔离 / nginx / systemd）
 - [docs/domain-config.md](docs/domain-config.md) — 域名与 nginx 配置示例
-- [docs/performance.md](docs/performance.md) — 性能占用与冷启动实测
-- [docs/roadmap.md](docs/roadmap.md) — 阶段路线（P1–P7 已完成）
 
 ## 安全
 
-默认**软隔离**（每用户 `$DSH_HOME` + session `cwd` + 沙箱写隔离）。Linux 生产部署建议开启**账号级硬隔离**（每用户 OS 账号，闭合同 UID 越权读）。详见 [docs/security-model.md](docs/security-model.md)。
+默认**软隔离**（每用户 `$DSH_HOME` + session `cwd` + 沙箱写隔离）。Linux 生产部署建议开启**账号级硬隔离**（每用户 OS 账号，闭合同 UID 越权读）。详见 [docs/deployment.md](docs/deployment.md)。
 
 ## 发布
 
