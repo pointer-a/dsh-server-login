@@ -1,12 +1,12 @@
 /**
- * Per-user DSH supervisor: a main + watchdog process pair, crash detection,
- * auto-restart with backoff, diagnostics capture, and post-restart handoff.
+ * Per-user DSH supervisor: a resident main DSH plus an **on-demand** watchdog.
  *
- * P5 implements the process-management half of the watchdog design: the
- * orchestrator spawns both processes, detects a crash, and restarts the main
- * with a bounded backoff while the watchdog (a headless DSH) carries out the
- * agent-level repair/session-resume — the harness-internal half, deferred to
- * real-harness integration (see docs/blueprint.md §4).
+ * The watchdog is not spawned at launch; it is pulled up once when the main
+ * crashes (to repair) or when a post-restart command must be executed. This
+ * keeps the steady-state footprint at one process per active user while still
+ * providing crash repair + command handoff. The watchdog's agent-level
+ * repair/session-resume is harness-internal and deferred to real-harness
+ * integration (see docs/blueprint.md §4).
  * @module dsh-server-login/supervisor/orchestrator
  */
 
@@ -58,10 +58,9 @@ export class Supervisor {
 
   constructor(private readonly config: ServerConfig) {}
 
-  /** Spawn the watchdog + main pair for a user (main must not already exist). */
+  /** Spawn the resident main DSH for a user (watchdog is pulled up on demand). */
   async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
     if (this.mains.has(userId)) throw new AlreadyRunningError(userId)
-    await this.spawnInstance(userId, 'watchdog', folder)
     return await this.spawnInstance(userId, 'main', folder, patchPath)
   }
 
@@ -71,6 +70,14 @@ export class Supervisor {
     if (current === undefined) return undefined
     this.killInstance(userId, current)
     return await this.spawnInstance(userId, 'main', current.folder, current.patchPath)
+  }
+
+  /** Spawn a one-shot watchdog for the user's current main (repair / execute). */
+  async spawnWatchdog(userId: string): Promise<Instance | undefined> {
+    if (this.watchdogs.has(userId)) return this.watchdogs.get(userId)
+    const main = this.mains.get(userId)
+    if (main === undefined) return undefined
+    return await this.spawnInstance(userId, 'watchdog', main.folder)
   }
 
   /** Current main + watchdog for a user. */
@@ -167,10 +174,21 @@ export class Supervisor {
       if (map.get(userId)?.id !== instance.id) return
       if (instance.status === 'stopped') {
         map.delete(userId)
-      } else {
-        instance.status = 'crashed'
-        instance.lastError = stderrTail.slice(-500) || undefined
+        return
+      }
+      // A one-shot watchdog that finished cleanly is not restarted.
+      if (instance.role === 'watchdog' && code === 0) {
+        instance.status = 'stopped'
+        map.delete(userId)
+        return
+      }
+      instance.status = 'crashed'
+      instance.lastError = stderrTail.slice(-500) || undefined
+      if (instance.role === 'main') {
+        void this.spawnWatchdog(userId)
         this.scheduleRestart(userId, instance)
+      } else {
+        map.delete(userId)
       }
     })
   }

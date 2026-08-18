@@ -11,22 +11,28 @@ const port = Number(process.env.DSH_SERVER_LOGIN_PORT ?? '3080')
 const cwd = process.cwd()
 
 if (role === 'watchdog') {
+  // One-shot watchdog: mark it ran, execute any handoff command, then exit.
   const handoffPath = process.env.DSH_SERVER_LOGIN_HANDOFF_PATH
-  console.log(`fake-watchdog running cwd=${cwd}`)
-  setInterval(() => {
-    if (handoffPath === undefined || !existsSync(handoffPath)) return
-    const content = readFileSync(handoffPath, 'utf8').trim()
-    if (content === '') return
-    let command = content
-    try {
-      command = JSON.parse(content).command ?? content
-    } catch {
-      // treat as a raw command
+  console.log(`fake-watchdog one-shot running cwd=${cwd}`)
+  if (handoffPath !== undefined) {
+    writeFileSync(join(dirname(handoffPath), 'watchdog-ran.json'), JSON.stringify({ at: Date.now() }))
+  }
+  setTimeout(() => {
+    let command = null
+    if (handoffPath !== undefined && existsSync(handoffPath)) {
+      const content = readFileSync(handoffPath, 'utf8').trim()
+      if (content !== '') {
+        try {
+          command = JSON.parse(content).command ?? content
+        } catch {
+          command = content
+        }
+        writeFileSync(join(dirname(handoffPath), 'watchdog-executed.json'), JSON.stringify({ command, at: Date.now() }))
+        writeFileSync(handoffPath, '')
+      }
     }
-    console.log(`fake-watchdog executing: ${command}`)
-    const executedPath = join(dirname(handoffPath), 'watchdog-executed.json')
-    writeFileSync(executedPath, JSON.stringify({ command, at: Date.now() }))
-    writeFileSync(handoffPath, '')
+    console.log(`fake-watchdog done${command ? ` (executed: ${command})` : ''}`)
+    process.exit(0)
   }, 300)
 } else {
   const server = createServer((req, res) => {

@@ -89,6 +89,7 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
     writeFileSync(handoffPath, JSON.stringify({ command, createdAt: Date.now() }))
     const instance = await app.supervisor.restartMain(user.id)
     if (instance === undefined) return reply.code(404).send({ error: 'not_running' })
+    await app.supervisor.spawnWatchdog(user.id)
     return {
       instance: { id: instance.id, port: instance.port, status: instance.status },
       url: `/u/${user.id}/dsh/`,

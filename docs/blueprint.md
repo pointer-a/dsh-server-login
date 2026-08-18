@@ -45,9 +45,9 @@ spawn(dshBinPath, ['--profile', 'web', '--patch', mainPatchPath, '--cwd', worksp
 **共享状态 = 每用户 `$DSH_HOME` 里的持久会话日志**（append-only；`session-persistence` 落盘）。
 
 - **主 DSH** 独占实时会话并持续 append；绑定回环端口对外服务。
-- **守护 DSH** 是同 home/同 workspace 的并发 headless DSH，通过 `loadStoredFrom(id, fromSeq)` 尾随读同一日志。
+- **守护 DSH** 是**按需拉起的一次性 headless DSH**（不常驻）：主 DSH 崩溃时、或需执行 post-restart 命令时，编排服务才 spawn 一次；它与主 DSH 同 home/同 workspace，通过 `loadStoredFrom(id, fromSeq)` 读同一日志，修复/resume 后退出。
 
-**崩溃接管闭环**（守护 DSH 检测到主进程退出后）：
+**崩溃接管闭环**（主 DSH 崩溃时，编排服务拉起一次守护 DSH 并自动重启主 DSH）：
 
 1. **诊断**：读退出码 + stderr 尾部 + 会话日志尾部，判定崩溃点。
 2. **修复会话日志**：`interruptedTurnClosers`（`packages/core/session/src/repair.ts`）+ `session-persistence.load`/`commitRepair` 把中断 turn 合成 `tool/result`/`step/end`/`turn/end{interrupted}`，产出可恢复的合法转录。
