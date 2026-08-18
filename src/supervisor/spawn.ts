@@ -1,24 +1,14 @@
 /**
- * Concrete child-DSH spawn + env scrubbing.
+ * Child-process helpers for the supervisor: env scrubbing and free-port lookup.
  *
- * Mirrors the harness `scrubbedParentEnv` / `SENSITIVE_ENV_PATTERN` doctrine
- * (packages/subprocess/subprocess/src/index.ts): build the child env from a
- * clean allowlist so no orchestrator secret leaks into a user DSH, then inject
- * only the resolved per-user values.
+ * Env scrubbing mirrors the harness `scrubbedParentEnv` / `SENSITIVE_ENV_PATTERN`
+ * doctrine (packages/subprocess/subprocess/src/index.ts): build the child env
+ * from a clean allowlist so no orchestrator secret leaks into a user DSH, then
+ * inject only the resolved per-user values.
  * @module dsh-server-login/supervisor/spawn
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
-import type { ServerConfig } from '../config.js'
-
-/** Everything a child DSH needs to launch. */
-export interface DshSpawnSpec {
-  profile: 'web' | 'headless'
-  patchPath: string
-  cwd: string
-  homeDir: string
-  apiKey: string
-}
+import { createServer } from 'node:net'
 
 const ALLOWED_ENV = new Set([
   'PATH',
@@ -45,22 +35,18 @@ export function scrubEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return out
 }
 
-/**
- * Launch one child DSH. The orchestrator is the tree parent (`detached: false`)
- * so signals propagate; P3 adds port probing and stderr capture.
- */
-export function spawnDsh(config: ServerConfig, spec: DshSpawnSpec): ChildProcess {
-  return spawn(
-    config.dshBinPath,
-    ['--profile', spec.profile, '--patch', spec.patchPath, '--cwd', spec.cwd],
-    {
-      cwd: spec.cwd,
-      env: {
-        ...scrubEnv(process.env),
-        DSH_HOME: spec.homeDir,
-        DEEPSEEK_API_KEY: spec.apiKey,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  )
+/** Reserve an ephemeral loopback port, release it, and return its number. */
+export function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer()
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address !== null ? address.port : undefined
+      server.close(() => {
+        if (port !== undefined) resolve(port)
+        else reject(new Error('could not reserve a free port'))
+      })
+    })
+  })
 }

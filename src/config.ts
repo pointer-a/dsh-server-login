@@ -17,8 +17,8 @@ export interface ServerConfig {
   dbPath: string
   /** Root under which per-user homes (`users/<id>/home`) and workspaces live. */
   dataRoot: string
-  /** Path/command used to launch a child DSH process. */
-  dshBinPath: string
+  /** Argv used to launch a child DSH; first element is the executable. */
+  dshCommand: string[]
   /** Pino log level. */
   logLevel: string
   /** Set the `Secure` flag on session cookies (enable behind HTTPS). */
@@ -35,7 +35,7 @@ export interface ConfigOverrides {
   port?: string | number
   dbPath?: string
   dataRoot?: string
-  dshBinPath?: string
+  dshCommand?: string[]
   logLevel?: string
   secureCookies?: boolean
   sessionTtlSeconds?: number | string
@@ -44,7 +44,7 @@ export interface ConfigOverrides {
 
 const DEFAULT_HOST = '127.0.0.1'
 const DEFAULT_PORT = 3080
-const DEFAULT_DSH_BIN = 'dsh'
+const DEFAULT_DSH_COMMAND = ['dsh']
 const DEFAULT_LOG_LEVEL = 'info'
 const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -63,12 +63,13 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
   const dataRoot =
     overrides.dataRoot ?? process.env.DSH_SERVER_LOGIN_DATA_ROOT ?? join(homedir(), '.dsh-server-login')
   const port = overrides.port ?? process.env.DSH_SERVER_LOGIN_PORT ?? DEFAULT_PORT
+  const dshBin = process.env.DSH_SERVER_LOGIN_DSH_BIN
   return {
     host: overrides.host ?? DEFAULT_HOST,
     port: typeof port === 'number' ? port : Number(port),
     dbPath: overrides.dbPath ?? join(dataRoot, 'server-login.db'),
     dataRoot,
-    dshBinPath: overrides.dshBinPath ?? process.env.DSH_SERVER_LOGIN_DSH_BIN ?? DEFAULT_DSH_BIN,
+    dshCommand: overrides.dshCommand ?? (dshBin !== undefined ? [dshBin] : DEFAULT_DSH_COMMAND),
     logLevel: overrides.logLevel ?? DEFAULT_LOG_LEVEL,
     secureCookies:
       overrides.secureCookies ?? toBool(process.env.DSH_SERVER_LOGIN_SECURE_COOKIES, false),

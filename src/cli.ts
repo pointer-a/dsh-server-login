@@ -48,12 +48,13 @@ interface ParsedValues {
 function toOverrides(values: ParsedValues): ConfigOverrides {
   const str = (value: string | boolean | undefined): string | undefined =>
     typeof value === 'string' ? value : undefined
+  const dshBin = str(values['dsh-bin'])
   return {
     port: str(values.port),
     host: str(values.host),
     dbPath: str(values.db),
     dataRoot: str(values['data-root']),
-    dshBinPath: str(values['dsh-bin']),
+    dshCommand: dshBin ? [dshBin] : undefined,
     logLevel: str(values['log-level']),
     secureCookies: values['secure-cookies'] === true ? true : undefined,
     sessionTtlSeconds: str(values['session-ttl']),

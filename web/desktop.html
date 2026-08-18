@@ -29,6 +29,12 @@
       路径：
       <span id="breadcrumb"></span>
     </div>
+    <div class="bar">
+      <button id="launchBtn">在此文件夹启动 DSH</button>
+      <button id="stopBtn" class="hidden">停止 DSH</button>
+      <span id="dshStatus">未运行</span>
+      <a id="dshLink" class="hidden" target="_blank" rel="noopener">打开 DSH</a>
+    </div>
     <table>
       <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
       <tbody id="rows"></tbody>
@@ -151,6 +157,39 @@
         location.href = '/login.html'
       })
 
+      async function refreshDsh() {
+        const res = await fetch('/api/dsh/status')
+        if (!res.ok) return
+        const body = await res.json()
+        const running = body.running
+        document.getElementById('stopBtn').classList.toggle('hidden', !running)
+        document.getElementById('dshLink').classList.toggle('hidden', !running)
+        document.getElementById('dshStatus').textContent = running
+          ? `运行中（端口 ${body.instance.port}）`
+          : '未运行'
+        if (running) {
+          const user = await me()
+          document.getElementById('dshLink').href = `/u/${user.id}/dsh/`
+        }
+      }
+      document.getElementById('launchBtn').addEventListener('click', async () => {
+        const res = await fetch('/api/dsh/launch', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ folder: pathString() }),
+        })
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          alert(body.error === 'already_running' ? '已有运行中的 DSH，请先停止' : '启动失败')
+          return
+        }
+        await refreshDsh()
+      })
+      document.getElementById('stopBtn').addEventListener('click', async () => {
+        await fetch('/api/dsh/stop', { method: 'POST' })
+        await refreshDsh()
+      })
+
       ;(async function init() {
         const user = await me()
         if (!user) {
@@ -159,6 +198,7 @@
         }
         document.getElementById('who').textContent = user.username
         await load()
+        await refreshDsh()
       })()
     </script>
   </body>

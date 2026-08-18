@@ -1,52 +1,128 @@
 /**
- * Per-user DSH supervisor: main + watchdog process pair, health, teardown.
+ * Per-user DSH supervisor: one main DSH per user, loopback port assignment,
+ * status tracking, and tree teardown.
  *
- * Skeleton — P3 implements single-DSH launch + loopback port tracking + stop;
- * P5 implements the crash-takeover loop (diagnose → repair session log via
- * `interruptedTurnClosers`/`session-persistence` → repair root cause → resume).
+ * P3 implements single-DSH launch/stop/status. P5 adds the watchdog/repair pair
+ * (crash diagnosis → session-log repair → resume) on top of this lifecycle.
  * @module dsh-server-login/supervisor/orchestrator
  */
 
+import { spawn, type ChildProcess } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
-import type { DshSpawnSpec } from './spawn.js'
+import { findFreePort, scrubEnv } from './spawn.js'
 
-/** A tracked child DSH (main or watchdog). */
-export interface ManagedInstance {
+export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped'
+
+/** A tracked child DSH (main). */
+export interface Instance {
   id: string
   userId: string
-  workspaceId?: string
-  role: 'main' | 'watchdog'
+  folder: string
+  port: number
+  status: InstanceStatus
   pid?: number
-  port?: number
-  status: 'starting' | 'running' | 'crashed' | 'repairing' | 'stopped'
+  exitCode?: number
+}
+
+/** Thrown when a user already has a running main DSH. */
+export class AlreadyRunningError extends Error {
+  constructor(userId: string) {
+    super(`user ${userId} already has a running DSH`)
+    this.name = 'AlreadyRunningError'
+  }
 }
 
 /**
- * Owns the lifecycle of all per-user DSH processes. State is a stub; the real
- * implementation persists into `dsh_instances` and drives spawn/kill/watch.
+ * Owns the lifecycle of all per-user DSH processes. State is in-memory (a
+ * running instance dies with the orchestrator); DB reconciliation is a P3+
+ * follow-up.
  */
 export class Supervisor {
-  private readonly instances = new Map<string, ManagedInstance>()
+  private readonly instances = new Map<string, Instance>()
+  private readonly children = new Map<string, ChildProcess>()
 
   constructor(private readonly config: ServerConfig) {}
 
-  /** Build the per-role spawn spec for a user's workspace. (P3) */
-  buildSpec(_userId: string, _workspaceId: string | undefined, _role: 'main' | 'watchdog'): DshSpawnSpec {
-    throw new Error('Supervisor.buildSpec not implemented until P3')
+  /** Spawn a main DSH for `userId` rooted at the given workspace folder. */
+  async launch(userId: string, folder: string): Promise<Instance> {
+    if (this.instances.has(userId)) throw new AlreadyRunningError(userId)
+
+    const port = await findFreePort()
+    const homeDir = join(this.config.dataRoot, 'users', userId, 'home')
+    const apiKey = process.env.DEEPSEEK_API_KEY ?? ''
+    const [command = 'dsh', ...args] = this.config.dshCommand
+
+    const child = spawn(command, [...args, '--profile', 'web', '--cwd', folder], {
+      cwd: folder,
+      env: {
+        ...scrubEnv(process.env),
+        DSH_HOME: homeDir,
+        DEEPSEEK_API_KEY: apiKey,
+        DSH_SERVER_LOGIN_PORT: String(port),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    const instance: Instance = {
+      id: randomUUID(),
+      userId,
+      folder,
+      port,
+      status: 'starting',
+      pid: child.pid ?? undefined,
+    }
+    this.instances.set(userId, instance)
+    this.children.set(userId, child)
+
+    child.on('spawn', () => {
+      instance.status = 'running'
+    })
+    child.on('error', () => {
+      instance.status = 'crashed'
+      this.instances.delete(userId)
+      this.children.delete(userId)
+    })
+    child.on('exit', (code) => {
+      if (instance.status !== 'stopped') instance.status = 'crashed'
+      instance.exitCode = code ?? undefined
+      this.instances.delete(userId)
+      this.children.delete(userId)
+    })
+    child.stdout?.pipe(process.stdout)
+    child.stderr?.pipe(process.stderr)
+
+    return instance
   }
 
-  /** Spawn and track a child DSH. (P3) */
-  launch(_spec: DshSpawnSpec): ManagedInstance {
-    throw new Error('Supervisor.launch not implemented until P3')
+  /** Current instance for a user, if any. */
+  statusFor(userId: string): Instance | undefined {
+    return this.instances.get(userId)
   }
 
-  /** Stop a tracked instance with tree teardown. (P3) */
-  stop(_id: string): void {
-    throw new Error('Supervisor.stop not implemented until P3')
+  /** Loopback port of the user's running instance, if any. */
+  portFor(userId: string): number | undefined {
+    return this.instances.get(userId)?.port
   }
 
-  /** Teardown every tracked process on shutdown. */
-  async teardown(): Promise<void> {
-    this.instances.clear()
+  /** Stop a user's instance with SIGTERM, escalating to SIGKILL after a grace. */
+  stop(userId: string): void {
+    const child = this.children.get(userId)
+    const instance = this.instances.get(userId)
+    if (instance !== undefined) instance.status = 'stopped'
+    this.instances.delete(userId)
+    this.children.delete(userId)
+    if (child === undefined) return
+    child.kill('SIGTERM')
+    const timer = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }, 5000)
+    timer.unref()
+  }
+
+  /** Stop every tracked instance on shutdown. */
+  teardown(): void {
+    for (const userId of [...this.instances.keys()]) this.stop(userId)
   }
 }

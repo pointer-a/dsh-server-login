@@ -1,37 +1,45 @@
 /**
- * Per-user DSH supervisor: main + watchdog process pair, health, teardown.
+ * Per-user DSH supervisor: one main DSH per user, loopback port assignment,
+ * status tracking, and tree teardown.
  *
- * Skeleton — P3 implements single-DSH launch + loopback port tracking + stop;
- * P5 implements the crash-takeover loop (diagnose → repair session log via
- * `interruptedTurnClosers`/`session-persistence` → repair root cause → resume).
+ * P3 implements single-DSH launch/stop/status. P5 adds the watchdog/repair pair
+ * (crash diagnosis → session-log repair → resume) on top of this lifecycle.
  * @module dsh-server-login/supervisor/orchestrator
  */
 import type { ServerConfig } from '../config.js';
-import type { DshSpawnSpec } from './spawn.js';
-/** A tracked child DSH (main or watchdog). */
-export interface ManagedInstance {
+export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped';
+/** A tracked child DSH (main). */
+export interface Instance {
     id: string;
     userId: string;
-    workspaceId?: string;
-    role: 'main' | 'watchdog';
+    folder: string;
+    port: number;
+    status: InstanceStatus;
     pid?: number;
-    port?: number;
-    status: 'starting' | 'running' | 'crashed' | 'repairing' | 'stopped';
+    exitCode?: number;
+}
+/** Thrown when a user already has a running main DSH. */
+export declare class AlreadyRunningError extends Error {
+    constructor(userId: string);
 }
 /**
- * Owns the lifecycle of all per-user DSH processes. State is a stub; the real
- * implementation persists into `dsh_instances` and drives spawn/kill/watch.
+ * Owns the lifecycle of all per-user DSH processes. State is in-memory (a
+ * running instance dies with the orchestrator); DB reconciliation is a P3+
+ * follow-up.
  */
 export declare class Supervisor {
     private readonly config;
     private readonly instances;
+    private readonly children;
     constructor(config: ServerConfig);
-    /** Build the per-role spawn spec for a user's workspace. (P3) */
-    buildSpec(_userId: string, _workspaceId: string | undefined, _role: 'main' | 'watchdog'): DshSpawnSpec;
-    /** Spawn and track a child DSH. (P3) */
-    launch(_spec: DshSpawnSpec): ManagedInstance;
-    /** Stop a tracked instance with tree teardown. (P3) */
-    stop(_id: string): void;
-    /** Teardown every tracked process on shutdown. */
-    teardown(): Promise<void>;
+    /** Spawn a main DSH for `userId` rooted at the given workspace folder. */
+    launch(userId: string, folder: string): Promise<Instance>;
+    /** Current instance for a user, if any. */
+    statusFor(userId: string): Instance | undefined;
+    /** Loopback port of the user's running instance, if any. */
+    portFor(userId: string): number | undefined;
+    /** Stop a user's instance with SIGTERM, escalating to SIGKILL after a grace. */
+    stop(userId: string): void;
+    /** Stop every tracked instance on shutdown. */
+    teardown(): void;
 }

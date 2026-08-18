@@ -7,10 +7,12 @@ import { type FastifyInstance } from 'fastify';
 import type { ServerConfig } from '../config.js';
 import { type Database } from '../db/connection.js';
 import type { PublicUser } from '../db/repo.js';
+import { Supervisor } from '../supervisor/orchestrator.js';
 declare module 'fastify' {
     interface FastifyInstance {
         db: Database;
         config: ServerConfig;
+        supervisor: Supervisor;
     }
     interface FastifyRequest {
         user: PublicUser | null;

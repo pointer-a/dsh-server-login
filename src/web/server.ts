@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { openDatabase, type Database } from '../db/connection.js'
 import type { PublicUser } from '../db/repo.js'
+import { Supervisor } from '../supervisor/orchestrator.js'
 import { rateLimit } from './middleware/rate-limit.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
@@ -23,6 +24,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     db: Database
     config: ServerConfig
+    supervisor: Supervisor
   }
   interface FastifyRequest {
     user: PublicUser | null
@@ -38,6 +40,7 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../../web')
  */
 export async function buildServer(config: ServerConfig): Promise<FastifyInstance> {
   const db = openDatabase(config.dbPath)
+  const supervisor = new Supervisor(config)
 
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -47,9 +50,11 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
 
   app.decorate('db', db)
   app.decorate('config', config)
+  app.decorate('supervisor', supervisor)
   app.decorateRequest('user', null)
 
   app.addHook('onClose', async () => {
+    supervisor.teardown()
     db.close()
   })
 

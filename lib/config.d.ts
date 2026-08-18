@@ -13,8 +13,8 @@ export interface ServerConfig {
     dbPath: string;
     /** Root under which per-user homes (`users/<id>/home`) and workspaces live. */
     dataRoot: string;
-    /** Path/command used to launch a child DSH process. */
-    dshBinPath: string;
+    /** Argv used to launch a child DSH; first element is the executable. */
+    dshCommand: string[];
     /** Pino log level. */
     logLevel: string;
     /** Set the `Secure` flag on session cookies (enable behind HTTPS). */
@@ -30,7 +30,7 @@ export interface ConfigOverrides {
     port?: string | number;
     dbPath?: string;
     dataRoot?: string;
-    dshBinPath?: string;
+    dshCommand?: string[];
     logLevel?: string;
     secureCookies?: boolean;
     sessionTtlSeconds?: number | string;

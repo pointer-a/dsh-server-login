@@ -72,7 +72,7 @@ spawn(dshBinPath, ['--profile', 'web', '--patch', mainPatchPath, '--cwd', worksp
 | Auth | `POST /api/auth/register\|login\|logout`、`GET /api/auth/me` | 已实现（P1） |
 | Admin | `GET /api/admin/users`、`POST /api/admin/users/:id/approve\|disable` | 已实现（P1） |
 | Desktop/FS | `GET /api/desktop/tree`、`POST /api/fs/mkdir\|upload` | 已实现（P2） |
-| DSH | `POST /api/dsh/launch\|stop`、`GET /api/dsh/status`、`GET /u/:slug/dsh/*` | stub |
+| DSH | `POST /api/dsh/launch\|stop`、`GET /api/dsh/status`、`GET /u/:slug/dsh/*` | 已实现（P3，HTTP 代理） |
 | Plugin | `GET /api/plugins`、`POST /api/plugins/select` | stub |
 | Domain/nginx | `GET/PUT /api/domain`、`POST /api/nginx/regen` | stub |
 | 静态 | `GET /*`（占位 SPA） | 已接 |
