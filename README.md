@@ -57,6 +57,7 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 - [docs/blueprint.md](docs/blueprint.md) — 技术设计（拓扑 / 数据模型 / API / 双 DSH）
 - [docs/deployment.md](docs/deployment.md) — Linux 生产部署（账号级隔离 / nginx / systemd）
 - [docs/domain-config.md](docs/domain-config.md) — 域名与 nginx 配置示例
+- [docs/troubleshooting.md](docs/troubleshooting.md) — 常见问题排查（502 / 404 / SSL / 401 / 端口冲突）
 
 ## 安全
 

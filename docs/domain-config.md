@@ -1,6 +1,6 @@
 # 域名配置示例 — DSH 服务端登录插件
 
-本文给出让用户通过域名访问自己 DSH 的 nginx 配置示例。**当前实现状态**：编排服务已能反向代理 `/u/<userId>/dsh/*` 到每用户 DSH（HTTP），默认域名 + 子路径访问可直接用；自定义域名、ACME 自动验证、按域生成 nginx 配置属于 **P6**，接口已预留（见 §6），下面示例标注「可用」或「待接入」。
+本文给出域名与 nginx 的配置示例。**注意**：默认访问方式已改为**每用户子域名**（`<用户名>.dsh.<域名>`，HTTP + WebSocket 均已支持）——因为 DSH 的 SPA 用绝对路径、子路径方案不兼容。通配 nginx 配置见 [deployment.md §6](deployment.md)，常见问题见 [troubleshooting.md](troubleshooting.md)。下面的「子路径」示例仅作遗留参考。
 
 ## 1. 访问拓扑
 
@@ -119,12 +119,7 @@ sudo certbot --nginx -d alice.example.com
 
 ## 5. WebSocket 说明
 
-DSH Web UI 使用 WebSocket。两级链路：
-
-- **nginx → 编排服务**：上面的 `map $http_upgrade` + `Upgrade/Connection` 头已支持 WS 透传。
-- **编排服务 → 每用户 DSH**：当前 [proxy.ts](../src/supervisor/proxy.ts) 只做 **HTTP** 转发，尚未处理
-  `Upgrade` 升级。因此完整 DSH 对话的 WebSocket 通道要在 P6 补上（在编排服务侧转发 `upgrade` 事件，
-  或由 nginx 直接终结 WS 到每用户 DSH）。
+DSH Web UI 使用 WebSocket。编排服务的反向代理已支持 WebSocket 隧道（[proxy.ts](../src/supervisor/proxy.ts) 的 `app.server` `upgrade` 处理器），按 Host 头路由到该用户 DSH，与 HTTP 一致。nginx 侧只需 `map $http_upgrade` + `Upgrade/Connection` 头透传。子域名下 WS 走 `wss://<用户名>.dsh.<域名>/api/...`。
 
 ## 6. 域名配置 API（已实现；ACME 自动验证待接入）
 

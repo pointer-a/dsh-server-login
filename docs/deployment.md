@@ -2,6 +2,8 @@
 
 公网 Linux 服务器的完整部署步骤。目标形态：**每用户一个独立 OS 账号**（硬隔离），nginx 边缘 TLS，用户经域名访问自己的 DSH。
 
+> 部署中遇到 502 / 404 / SSL / 401 / 端口冲突等问题，先看 [troubleshooting.md](troubleshooting.md)。
+
 ## 0. 前置条件
 
 - Linux 服务器，root 权限（账号创建 + setuid 降权需要）。

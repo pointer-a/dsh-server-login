@@ -6,18 +6,14 @@
 
 ```
 用户浏览器
-   └─(HTTPS)─> nginx（TLS 终结 / vhost 映射）
-                  └─(反向代理)─> 编排服务 Fastify
-                                    ├─ /api/*（认证/管理/桌面/插件/域名）
-                                    ├─ /u/:slug/dsh/* → 每用户 DSH 的 127.0.0.1 动态端口
-                                    ├─ SQLite（better-sqlite3）
-                                    └─ 进程编排（child_process spawn/kill/watch）
-                                          ├─ 主 DSH（dsh --profile web）
-                                          └─ 守护 DSH（dsh --profile headless）
+   ├─(HTTPS)─> dsh.<域名>             → 编排服务 Fastify（认证/管理/桌面/域名，/api/*）
+   └─(HTTPS)─> <用户名>.dsh.<域名>    → 编排服务按 Host 头路由到该用户 DSH（HTTP + WebSocket）
 ```
 
-- 每用户 DSH 只绑定回环端口，不直接暴露公网；反向代理是编排服务自己的职责（端口表随 spawn/respawn 即时更新，nginx 无需每次 reload）。
-- 编排服务是独立 Node 进程，`child_process.spawn('dsh', ...)` 拉起每用户的 DSH 进程对。
+- **主域 `dsh.<域名>`**：编排服务自己的登录 / 管理台 / 桌面 / API。
+- **每用户子域 `<用户名>.dsh.<域名>`**：编排服务按 Host 头解析用户名 → 校验会话 cookie → 反向代理到该用户 DSH 的 `127.0.0.1:<动态端口>`（HTTP + WebSocket 隧道）。
+- 每用户 DSH 只绑回环端口、不直接暴露公网；端口表随 spawn/respawn 即时更新，nginx 用通配 `*.dsh.<域名>` 透传即可，无需每次 reload。
+- 编排服务是独立 Node 进程，`child_process.spawn('dsh --profile web --host 127.0.0.1 --port <随机>', ...)` 拉起每用户 DSH（主 + 按需守护）。
 
 ## 2. 打包与启动
 
