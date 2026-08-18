@@ -138,7 +138,8 @@ export class Supervisor {
     map.set(userId, instance)
 
     const [command = 'dsh', ...args] = this.config.dshCommand
-    const launchArgs = ['--profile', role === 'main' ? 'web' : 'headless', '--cwd', folder]
+    const launchArgs = ['--profile', role === 'main' ? 'web' : 'headless']
+    if (role === 'main') launchArgs.push('--host', '127.0.0.1', '--port', String(port))
     if (role === 'main' && patchPath !== undefined) launchArgs.push('--patch', patchPath)
 
     const env: Record<string, string> = { ...this.baseEnv(userId), DSH_SERVER_LOGIN_ROLE: role }
