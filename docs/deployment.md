@@ -84,15 +84,7 @@ echo "provisioned $1 -> uid $uid"
 dsh plugin --profile web add dsh-server-login
 ```
 
-端口绑定：harness 的 web 服务行（`webserver`，默认 `3080`）需要读编排服务注入的端口。编排服务生成的 patch 里加一行覆盖（`!!js` 读 env，**不动 harness**）：
-
-```yaml
-- id: webserver
-  config:
-    port: !!js Number(process.env.DSH_SERVER_LOGIN_PORT ?? 3080)
-```
-
-> ⚠️ 这行依赖 harness 的 `webserver` 行 id 与 `!!js` 配置求值支持，**需在真实 harness 上核实行 id / 配置键名**（本仓库未随 harness 一起打包，无法本地端到端验证）。核完后把该覆盖固化进编排服务的 patch 生成。
+端口绑定：harness 的 web 服务读 **`--port` 这个 CLI flag**（`web-startup` 插件解析后经 `webStartup` 服务喂给 webserver）。编排服务 spawn 子 DSH 时已传 `--host 127.0.0.1 --port <随机端口>`，子 DSH 便绑到分配的随机端口、只监听回环，与编排服务自身（3080）不再冲突，无需 patch 覆盖。
 
 ## 6. nginx + 域名 + TLS
 
@@ -147,6 +139,5 @@ systemctl daemon-reload && systemctl enable --now dsh-server-login
 
 ## 10. 已知待办（真实 harness 集成时）
 
-- `webserver` 端口覆盖的 patch 行需对真实 harness 核实（第 5 节）。
 - 守护 DSH 的「修复会话日志 + resume 接手」是 harness 内部行为（`interruptedTurnClosers` + `session-persistence`），接入时由 `dsh-server-login/runtime` 的 watchdog 分支承担。
 - 子进程日志当前直连编排进程 stdout，生产建议落到每用户 `home/logs/`。
