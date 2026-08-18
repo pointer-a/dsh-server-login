@@ -51,15 +51,17 @@ export function parseCookie(header: string | undefined, name: string): string | 
 }
 
 /** Build a `Set-Cookie` value for the session token. */
-export function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean): string {
+export function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean, domain?: string): string {
   const flags = ['sid=' + token, 'HttpOnly', 'SameSite=Lax', 'Path=/', `Max-Age=${maxAgeSeconds}`]
   if (secure) flags.push('Secure')
+  if (domain !== undefined && domain !== '') flags.push(`Domain=${domain}`)
   return flags.join('; ')
 }
 
 /** Build a `Set-Cookie` value that expires the session cookie. */
-export function clearSessionCookie(secure: boolean): string {
+export function clearSessionCookie(secure: boolean, domain?: string): string {
   const flags = ['sid=', 'HttpOnly', 'SameSite=Lax', 'Path=/', 'Max-Age=0']
   if (secure) flags.push('Secure')
+  if (domain !== undefined && domain !== '') flags.push(`Domain=${domain}`)
   return flags.join('; ')
 }

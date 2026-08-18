@@ -99,7 +99,10 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         userAgent: request.headers['user-agent'],
       })
       audit(db, user.id, 'login', null)
-      reply.header('set-cookie', sessionCookie(token, app.config.sessionTtlSeconds, app.config.secureCookies))
+      reply.header(
+        'set-cookie',
+        sessionCookie(token, app.config.sessionTtlSeconds, app.config.secureCookies, app.config.cookieDomain),
+      )
       return { user: toPublicUser(user) }
     },
   )
@@ -107,7 +110,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post('/api/auth/logout', async (request, reply) => {
     const token = parseCookie(request.headers.cookie, 'sid')
     if (token !== undefined) deleteSession(app.db, hashSessionToken(token))
-    reply.header('set-cookie', clearSessionCookie(app.config.secureCookies))
+    reply.header('set-cookie', clearSessionCookie(app.config.secureCookies, app.config.cookieDomain))
     return { ok: true }
   })
 

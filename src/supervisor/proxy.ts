@@ -12,7 +12,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { Agent, request as httpRequest, type IncomingMessage } from 'node:http'
 import { connect } from 'node:net'
-import { findUserBySlug } from '../db/repo.js'
+import { findSessionWithUser, findUserBySlug } from '../db/repo.js'
+import { hashSessionToken, parseCookie } from '../web/auth.js'
 import { requireAuth } from '../web/middleware/authn.js'
 
 const upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
@@ -34,13 +35,33 @@ export function subdomainForUser(baseDomain: string, username: string): string |
   return baseDomain === '' ? null : `${username.toLowerCase()}.${baseDomain}`
 }
 
-/** Resolve a Host header to a running DSH loopback port, or undefined. */
-function resolvePort(app: FastifyInstance, host: string | undefined): number | undefined {
+/** A subdomain resolution: a tunnelable port, an error to return, or null (not a subdomain). */
+type SubdomainAccess = { port: number } | { error: string; code: number } | null
+
+/**
+ * Resolve a subdomain Host to a DSH port, authenticating the caller: the session
+ * cookie must belong to a non-disabled user whose username matches the subdomain.
+ */
+function resolveSubdomainAccess(
+  app: FastifyInstance,
+  host: string | undefined,
+  cookieHeader: string | undefined,
+): SubdomainAccess {
   const slug = parseSubdomain(host, app.config.baseDomain)
-  if (slug === null) return undefined
-  const user = findUserBySlug(app.db, slug)
-  if (user === undefined) return undefined
-  return app.supervisor.portFor(user.id)
+  if (slug === null) return null
+  const target = findUserBySlug(app.db, slug)
+  if (target === undefined) return { error: 'unknown_user', code: 404 }
+  const token = parseCookie(cookieHeader, 'sid')
+  const session = token === undefined ? undefined : findSessionWithUser(app.db, hashSessionToken(token))
+  if (session === undefined || session.expiresAt <= Date.now() || session.user.role === 'disabled') {
+    return { error: 'unauthorized', code: 401 }
+  }
+  if (session.user.username.toLowerCase() !== slug) {
+    return { error: 'forbidden', code: 403 }
+  }
+  const port = app.supervisor.portFor(session.user.id)
+  if (port === undefined) return { error: 'not_running', code: 404 }
+  return { port }
 }
 
 function proxyHttp(
@@ -101,19 +122,23 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
 
   // Per-user subdomain: HTTP (intercept before normal routing).
   app.addHook('onRequest', async (request, reply) => {
-    const port = resolvePort(app, request.headers.host)
-    if (port === undefined) return
-    proxyHttp(request, reply, port, request.raw.url ?? '/')
+    const access = resolveSubdomainAccess(app, request.headers.host, request.headers.cookie)
+    if (access === null) return
+    if ('error' in access) {
+      reply.code(access.code).send({ error: access.error })
+      return
+    }
+    proxyHttp(request, reply, access.port, request.raw.url ?? '/')
   })
 
   // Per-user subdomain: WebSocket upgrade tunnel.
   app.server.on('upgrade', (req, socket, head) => {
-    const port = resolvePort(app, req.headers.host)
-    if (port === undefined) {
+    const access = resolveSubdomainAccess(app, req.headers.host, req.headers.cookie)
+    if (access === null || 'error' in access) {
       socket.destroy()
       return
     }
-    const upstream = connect({ host: '127.0.0.1', port })
+    const upstream = connect({ host: '127.0.0.1', port: access.port })
     upstream.on('connect', () => {
       const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
       for (let i = 0; i < req.rawHeaders.length; i += 2) {

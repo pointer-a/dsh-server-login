@@ -16,6 +16,6 @@ export declare function hashSessionToken(token: string): string;
 /** Extract a named cookie value from a `Cookie` header. */
 export declare function parseCookie(header: string | undefined, name: string): string | undefined;
 /** Build a `Set-Cookie` value for the session token. */
-export declare function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean): string;
+export declare function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean, domain?: string): string;
 /** Build a `Set-Cookie` value that expires the session cookie. */
-export declare function clearSessionCookie(secure: boolean): string;
+export declare function clearSessionCookie(secure: boolean, domain?: string): string;
