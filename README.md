@@ -6,7 +6,7 @@
 
 ## 它解决什么
 
-DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 远程访问缺认证层。`dsh-server-login` 在其之上补一层**服务端登录 + 多租户编排**：管理员审核注册用户，每个用户落到自己的文件桌面，按文件夹启动 DSH、选择启用哪些插件，通过域名访问，且彼此文件隔离。
+DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 远程访问缺认证层。`dsh-server-login` 在其之上补一层**服务端登录 + 多租户编排**：管理员审核注册用户，每个用户落到自己的文件桌面，按文件夹启动 DSH、选择启用哪些插件，通过域名访问，且彼此文件隔离（目前暂未适配手机）。
 
 ## 核心能力
 
@@ -36,7 +36,7 @@ node lib/cli.js bootstrap-admin --username admin --password '<强密码>' --db .
 node lib/cli.js --port 3080 --db ./dev.local.db
 ```
 
-访问 `http://127.0.0.1:3080/`：登录 / 注册 / 管理台 / 桌面。
+访问 `http://127.0.0.1:3080/`：登录 / 注册 / 管理台 / 桌面（详细部署流程见 [docs/deployment.md](docs/deployment.md)）。
 
 ## 配置
 
@@ -62,9 +62,6 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 
 默认**软隔离**（每用户 `$DSH_HOME` + session `cwd` + 沙箱写隔离）。Linux 生产部署建议开启**账号级硬隔离**（每用户 OS 账号，闭合同 UID 越权读）。详见 [docs/deployment.md](docs/deployment.md)。
 
-## 发布
-
-按 DSH 插件市场的 [STANDARD.md](STANDARD.md) 以 **cordis-plugin（产物型）** 分发：提交 `lib/` 构建产物，`main` 指向 `lib/index.js`，`prepare` 供 git 安装自构建。发布前给 GitHub 仓库加 topic `dsh-plugin`、确认 `name` 唯一（当前 `dsh-server-login` 在 npm 未被占用）。
 
 ## 许可证
 
