@@ -79,3 +79,19 @@ export declare function setFolderPlugins(db: Database, workspaceId: string, sele
 }>): void;
 /** Enabled plugin ids for a workspace. */
 export declare function getEnabledPluginIds(db: Database, workspaceId: string): string[];
+/** A custom-domain row. */
+export interface Domain {
+    id: string;
+    userId: string;
+    domain: string;
+    verified: number;
+    nginxConfig: string | null;
+    updatedAt: number;
+}
+export declare function findDomainByUser(db: Database, userId: string): Domain | undefined;
+export declare function findDomainById(db: Database, id: string): Domain | undefined;
+export declare function listDomains(db: Database): Domain[];
+/** Upsert a user's custom domain (resetting `verified` to 0). */
+export declare function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain;
+/** Set the verified flag on a domain. */
+export declare function setDomainVerified(db: Database, id: string, verified: boolean): boolean;

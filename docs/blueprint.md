@@ -74,7 +74,7 @@ spawn(dshBinPath, ['--profile', 'web', '--patch', mainPatchPath, '--cwd', worksp
 | Desktop/FS | `GET /api/desktop/tree`、`POST /api/fs/mkdir\|upload` | 已实现（P2） |
 | DSH | `POST /api/dsh/launch\|stop\|restart`、`GET /api/dsh/status`、`GET /u/:slug/dsh/*` | 已实现（P3/P5，HTTP 代理；main+watchdog 编排层） |
 | Plugin | `GET /api/plugins`、`POST /api/plugins/select` | 已实现（P4） |
-| Domain/nginx | `GET/PUT /api/domain`、`POST /api/nginx/regen` | stub |
+| Domain/nginx | `GET/PUT /api/domain`、`POST /api/nginx/regen`、`GET/POST /api/admin/domains` | 已实现（P6，管理员手动验证；ACME 待接入） |
 | 静态 | `GET /*`（占位 SPA） | 已接 |
 
 ## 7. 安全模型

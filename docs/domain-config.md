@@ -126,7 +126,7 @@ DSH Web UI 使用 WebSocket。两级链路：
   `Upgrade` 升级。因此完整 DSH 对话的 WebSocket 通道要在 P6 补上（在编排服务侧转发 `upgrade` 事件，
   或由 nginx 直接终结 WS 到每用户 DSH）。
 
-## 6. 域名配置 API（接口已预留，待 P6 实现）
+## 6. 域名配置 API（已实现；ACME 自动验证待接入）
 
 | 方法 | 路径 | 作用 |
 |---|---|---|

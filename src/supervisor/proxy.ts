@@ -42,7 +42,13 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
         headers: { ...request.headers, host: `127.0.0.1:${port}` },
       },
       (upRes) => {
-        reply.raw.writeHead(upRes.statusCode ?? 502, upRes.headers)
+        const headers = { ...upRes.headers }
+        const location = upRes.headers.location
+        // Rewrite absolute-path Location redirects to stay under the subpath.
+        if (typeof location === 'string' && location.startsWith('/') && !location.startsWith('//') && !location.startsWith(prefix)) {
+          headers.location = prefix + location
+        }
+        reply.raw.writeHead(upRes.statusCode ?? 502, headers)
         upRes.pipe(reply.raw)
       },
     )

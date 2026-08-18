@@ -36,6 +36,11 @@ if (role === 'watchdog') {
       setTimeout(() => process.exit(1), 10)
       return
     }
+    if (req.url === '/redirect') {
+      res.writeHead(302, { location: '/somewhere' })
+      res.end('redirecting')
+      return
+    }
     res.writeHead(200, { 'content-type': 'text/plain' })
     res.end(
       `fake-dsh pid=${process.pid} port=${port} cwd=${cwd} url=${req.url} argv=${process.argv.slice(2).join(' ')}`,

@@ -233,3 +233,65 @@ export function getEnabledPluginIds(db: Database, workspaceId: string): string[]
     .all(workspaceId) as Array<{ plugin_id: string }>
   return rows.map((row) => row.plugin_id)
 }
+
+/** A custom-domain row. */
+export interface Domain {
+  id: string
+  userId: string
+  domain: string
+  verified: number
+  nginxConfig: string | null
+  updatedAt: number
+}
+
+function toDomain(row: Record<string, unknown>): Domain {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    domain: row.domain as string,
+    verified: row.verified as number,
+    nginxConfig: (row.nginx_config as string | null) ?? null,
+    updatedAt: row.updated_at as number,
+  }
+}
+
+const DOMAIN_COLS = 'id, user_id, domain, verified, nginx_config, updated_at'
+
+export function findDomainByUser(db: Database, userId: string): Domain | undefined {
+  const row = db.prepare(`SELECT ${DOMAIN_COLS} FROM domains WHERE user_id = ?`).get(userId)
+  return row ? toDomain(row as Record<string, unknown>) : undefined
+}
+
+export function findDomainById(db: Database, id: string): Domain | undefined {
+  const row = db.prepare(`SELECT ${DOMAIN_COLS} FROM domains WHERE id = ?`).get(id)
+  return row ? toDomain(row as Record<string, unknown>) : undefined
+}
+
+export function listDomains(db: Database): Domain[] {
+  const rows = db.prepare(`SELECT ${DOMAIN_COLS} FROM domains ORDER BY updated_at DESC`).all() as Array<
+    Record<string, unknown>
+  >
+  return rows.map((row) => toDomain(row))
+}
+
+/** Upsert a user's custom domain (resetting `verified` to 0). */
+export function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain {
+  db.prepare(`
+    INSERT INTO domains (id, user_id, domain, verified, nginx_config, updated_at)
+    VALUES (?, ?, ?, 0, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      domain = excluded.domain,
+      verified = 0,
+      nginx_config = excluded.nginx_config,
+      updated_at = excluded.updated_at
+  `).run(randomUUID(), userId, domain, nginxConfig, Date.now())
+  return findDomainByUser(db, userId)!
+}
+
+/** Set the verified flag on a domain. */
+export function setDomainVerified(db: Database, id: string, verified: boolean): boolean {
+  const info = db
+    .prepare('UPDATE domains SET verified = ?, updated_at = ? WHERE id = ?')
+    .run(verified ? 1 : 0, Date.now(), id)
+  return info.changes > 0
+}

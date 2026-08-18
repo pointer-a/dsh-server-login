@@ -26,7 +26,8 @@
     "smoke:fs": "node scripts/smoke-fs.mjs",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
     "smoke:plugins": "node scripts/smoke-plugins.mjs",
-    "smoke:watchdog": "node scripts/smoke-watchdog.mjs"
+    "smoke:watchdog": "node scripts/smoke-watchdog.mjs",
+    "smoke:domain": "node scripts/smoke-domain.mjs"
   },
   "dsh": {
     "plugin": true,
