@@ -1,0 +1,1 @@
+{"version":3,"file":"generate.js","sourceRoot":"","sources":["../../src/nginx/generate.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH;;;;;GAKG;AACH,MAAM,UAAU,iBAAiB,CAAC,MAAc,EAAE,YAAoB;IACpE,OAAO;QACL,sCAAsC,MAAM,EAAE;QAC9C,UAAU;QACV,mBAAmB;QACnB,iBAAiB,MAAM,GAAG;QAC1B,8CAA8C,YAAY,KAAK;QAC/D,GAAG;KACJ,CAAC,IAAI,CAAC,IAAI,CAAC,CAAA;AACd,CAAC"}

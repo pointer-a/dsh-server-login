@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>注册 — dsh-server-login</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, sans-serif; max-width: 22rem; margin: 4rem auto; padding: 0 1rem; }
+      label { display: block; margin: 1rem 0 0.25rem; }
+      input { width: 100%; padding: 0.5rem; box-sizing: border-box; }
+      button { width: 100%; margin-top: 1.25rem; padding: 0.6rem; }
+      #msg { min-height: 1.2em; }
+      #msg.ok { color: #27ae60; }
+      a { color: inherit; }
+    </style>
+  </head>
+  <body>
+    <h1>注册</h1>
+    <form id="register">
+      <label for="username">用户名（3–32 位字母/数字/下划线/连字符）</label>
+      <input id="username" name="username" autocomplete="username" required />
+      <label for="password">密码（至少 8 位）</label>
+      <input id="password" name="password" type="password" autocomplete="new-password" required />
+      <button type="submit">注册</button>
+    </form>
+    <p id="msg"></p>
+    <p>已有账号？<a href="/login.html">登录</a></p>
+    <script>
+      const form = document.getElementById('register')
+      const msg = document.getElementById('msg')
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault()
+        msg.textContent = ''
+        msg.classList.remove('ok')
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            username: form.username.value,
+            password: form.password.value,
+          }),
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          msg.textContent = body.error === 'username_taken' ? '用户名已被占用' : body.message || '注册失败'
+          return
+        }
+        msg.classList.add('ok')
+        msg.textContent = '注册成功，请等待管理员审核后登录。'
+        form.reset()
+      })
+    </script>
+  </body>
+</html>

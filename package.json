@@ -1,0 +1,71 @@
+{
+  "name": "dsh-server-login",
+  "version": "0.1.0",
+  "description": "DSH 服务端登录插件：多租户托管平台，让用户通过域名安全访问自己的 DSH 实例（主 + 守护）。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "bin": {
+    "dsh-server-login": "./lib/cli.js"
+  },
+  "files": [
+    "lib",
+    "web",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "dev": "node lib/cli.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:auth": "node scripts/smoke-auth.mjs"
+  },
+  "dsh": {
+    "plugin": true,
+    "kind": "server",
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "disclosure": {
+    "cloud": true,
+    "network": [
+      "https://api.deepseek.com"
+    ],
+    "apiKeys": [
+      { "env": "DEEPSEEK_API_KEY", "storage": "sqlite-encrypted-ref" }
+    ],
+    "permissions": {
+      "filesystem": "per-user-0700",
+      "network": "egress",
+      "env": "read-listed"
+    },
+    "jurisdiction": [
+      "PIPL(CN)"
+    ],
+    "retention": "server"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.0.0",
+    "@fastify/static": "^8.0.0",
+    "better-sqlite3": "^11.10.0",
+    "fastify": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/dsh-server-login.git"
+  },
+  "license": "MIT"
+}

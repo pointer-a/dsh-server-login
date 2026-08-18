@@ -1,0 +1,9 @@
+node_modules/
+data/
+dist-web/
+*.log
+*.db
+*.db-wal
+*.db-shm
+*.local.db
+.DS_Store
