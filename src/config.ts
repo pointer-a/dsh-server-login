@@ -7,6 +7,10 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+/** Isolation tier. `soft` = per-user home/workspace + sandbox (same OS user);
+ * `account` = per-user OS account via a setuid wrapper (Linux, needs root). */
+export type IsolationMode = 'soft' | 'account'
+
 /** A plugin available for per-folder enablement (`id` = package name). */
 export interface PluginInfo {
   id: string
@@ -38,6 +42,12 @@ export interface ServerConfig {
   maxUploadBytes: number
   /** Delay before auto-restarting a crashed child DSH, in milliseconds. */
   restartBackoffMs: number
+  /** Isolation tier (see {@link IsolationMode}). */
+  isolationMode: IsolationMode
+  /** Argv prefix that drops privileges; `{UID}`/`{GID}` are substituted. */
+  spawnAsUserCommand: string[]
+  /** Base uid for the deterministic per-user uid. */
+  baseUid: number
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -53,6 +63,9 @@ export interface ConfigOverrides {
   sessionTtlSeconds?: number | string
   maxUploadBytes?: number | string
   restartBackoffMs?: number | string
+  isolationMode?: IsolationMode
+  spawnAsUserCommand?: string[]
+  baseUid?: number | string
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -62,6 +75,18 @@ const DEFAULT_LOG_LEVEL = 'info'
 const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 const DEFAULT_RESTART_BACKOFF_MS = 1000
+const DEFAULT_ISOLATION_MODE: IsolationMode = 'soft'
+const DEFAULT_SPAWN_AS_USER_COMMAND = [
+  'setpriv',
+  '--reuid',
+  '{UID}',
+  '--regid',
+  '{GID}',
+  '--inh-caps=-all',
+  '--clear-groups',
+  '--',
+]
+const DEFAULT_BASE_UID = 100000
 
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
@@ -94,6 +119,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     overrides.dataRoot ?? process.env.DSH_SERVER_LOGIN_DATA_ROOT ?? join(homedir(), '.dsh-server-login')
   const port = overrides.port ?? process.env.DSH_SERVER_LOGIN_PORT ?? DEFAULT_PORT
   const dshBin = process.env.DSH_SERVER_LOGIN_DSH_BIN
+  const isolationMode = overrides.isolationMode ?? DEFAULT_ISOLATION_MODE
   return {
     host: overrides.host ?? DEFAULT_HOST,
     port: typeof port === 'number' ? port : Number(port),
@@ -113,5 +139,8 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     restartBackoffMs: Number(
       overrides.restartBackoffMs ?? process.env.DSH_SERVER_LOGIN_RESTART_BACKOFF ?? DEFAULT_RESTART_BACKOFF_MS,
     ),
+    isolationMode,
+    spawnAsUserCommand: overrides.spawnAsUserCommand ?? DEFAULT_SPAWN_AS_USER_COMMAND,
+    baseUid: Number(overrides.baseUid ?? process.env.DSH_SERVER_LOGIN_BASE_UID ?? DEFAULT_BASE_UID),
   }
 }

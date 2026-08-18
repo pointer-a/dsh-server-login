@@ -3,6 +3,9 @@
  * (or read from env), never a hardcoded constant inside the app.
  * @module dsh-server-login/config
  */
+/** Isolation tier. `soft` = per-user home/workspace + sandbox (same OS user);
+ * `account` = per-user OS account via a setuid wrapper (Linux, needs root). */
+export type IsolationMode = 'soft' | 'account';
 /** A plugin available for per-folder enablement (`id` = package name). */
 export interface PluginInfo {
     id: string;
@@ -33,6 +36,12 @@ export interface ServerConfig {
     maxUploadBytes: number;
     /** Delay before auto-restarting a crashed child DSH, in milliseconds. */
     restartBackoffMs: number;
+    /** Isolation tier (see {@link IsolationMode}). */
+    isolationMode: IsolationMode;
+    /** Argv prefix that drops privileges; `{UID}`/`{GID}` are substituted. */
+    spawnAsUserCommand: string[];
+    /** Base uid for the deterministic per-user uid. */
+    baseUid: number;
 }
 /** Untyped overrides collected from argv / env. */
 export interface ConfigOverrides {
@@ -47,6 +56,9 @@ export interface ConfigOverrides {
     sessionTtlSeconds?: number | string;
     maxUploadBytes?: number | string;
     restartBackoffMs?: number | string;
+    isolationMode?: IsolationMode;
+    spawnAsUserCommand?: string[];
+    baseUid?: number | string;
 }
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to

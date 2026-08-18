@@ -61,6 +61,8 @@ export declare class Supervisor {
     private handoffPath;
     private baseEnv;
     private spawnInstance;
+    /** Spawn the child, optionally through the account-level setuid wrapper. */
+    private spawnAsUser;
     private trackChild;
     private scheduleRestart;
     private killInstance;

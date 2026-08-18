@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
-    ".": "./lib/index.js"
+    ".": "./lib/index.js",
+    "./runtime": "./lib/runtime.js"
   },
   "bin": {
     "dsh-server-login": "./lib/cli.js"
@@ -27,7 +28,8 @@
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
     "smoke:plugins": "node scripts/smoke-plugins.mjs",
     "smoke:watchdog": "node scripts/smoke-watchdog.mjs",
-    "smoke:domain": "node scripts/smoke-domain.mjs"
+    "smoke:domain": "node scripts/smoke-domain.mjs",
+    "smoke:isolation": "node scripts/smoke-isolation.mjs"
   },
   "dsh": {
     "plugin": true,

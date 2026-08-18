@@ -10,10 +10,11 @@
  * @module dsh-server-login/supervisor/orchestrator
  */
 
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
+import { uidForUser } from '../isolation.js'
 import { findFreePort, scrubEnv } from './spawn.js'
 
 export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped'
@@ -144,9 +145,28 @@ export class Supervisor {
     if (role === 'main') env.DSH_SERVER_LOGIN_PORT = String(port)
     if (role === 'watchdog') env.DSH_SERVER_LOGIN_HANDOFF_PATH = this.handoffPath(userId)
 
-    const child = spawn(command, [...args, ...launchArgs], { cwd: folder, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = this.spawnAsUser(userId, command, [...args, ...launchArgs], { cwd: folder, env })
     this.trackChild(userId, instance, child)
     return instance
+  }
+
+  /** Spawn the child, optionally through the account-level setuid wrapper. */
+  private spawnAsUser(
+    userId: string,
+    command: string,
+    args: string[],
+    options: { cwd: string; env: Record<string, string> },
+  ): ChildProcess {
+    const stdio: StdioOptions = ['ignore', 'pipe', 'pipe']
+    if (this.config.isolationMode !== 'account') {
+      return spawn(command, args, { ...options, stdio })
+    }
+    const uid = uidForUser(userId, this.config.baseUid)
+    const prefix = this.config.spawnAsUserCommand.map((part) =>
+      part.replaceAll('{UID}', String(uid)).replaceAll('{GID}', String(uid)),
+    )
+    const [asCommand = 'setpriv', ...asArgs] = prefix
+    return spawn(asCommand, [...asArgs, command, ...args], { ...options, stdio })
   }
 
   private trackChild(userId: string, instance: Instance, child: ChildProcess): void {

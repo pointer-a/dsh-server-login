@@ -15,6 +15,7 @@ import { resolveConfig, type ConfigOverrides } from './config.js'
 import { openDatabase } from './db/connection.js'
 import { countAdmins, createUser } from './db/repo.js'
 import { hashPassword } from './web/auth.js'
+import { uidForUser } from './isolation.js'
 import { buildServer } from './web/server.js'
 
 const HELP = `dsh-server-login — DSH server login orchestrator
@@ -135,10 +136,29 @@ async function runServer(args: string[]): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
+function uidForUserCmd(args: string[]): void {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { 'base-uid': { type: 'string' } },
+  })
+  const userId = positionals[0]
+  if (userId === undefined) {
+    console.error('usage: dsh-server-login uid-for-user <userId> [--base-uid N]')
+    process.exit(2)
+  }
+  const baseUid = Number(values['base-uid'] ?? process.env.DSH_SERVER_LOGIN_BASE_UID ?? 100000)
+  console.log(uidForUser(userId, baseUid))
+}
+
 async function main(): Promise<void> {
   const [first, ...rest] = process.argv.slice(2)
   if (first === 'bootstrap-admin') {
     await bootstrapAdmin(rest)
+    return
+  }
+  if (first === 'uid-for-user') {
+    uidForUserCmd(rest)
     return
   }
   await runServer(process.argv.slice(2))

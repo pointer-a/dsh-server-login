@@ -18,10 +18,13 @@
 
 **同 UID 越权读**：编排服务与所有每用户 DSH 跑在同一 OS 账号，`0700` 挡不住同 UID 进程读彼此文件；`fs-sandbox`/Landlock 默认 `readOnly:['/']` 也不限读。软隔离防「写越界」与「凭据泄漏」，但防不住「恶意 DSH 读邻居文件」。
 
-## 硬隔离升级路径（P7）
+## 硬隔离（P7，已实现账号级）
 
-1. 每用户 OS 账号/容器（`systemd-nspawn`/`docker`/`runc`），`0700` 与挂载命名空间才真正生效。
-2. 收窄 Landlock 读授权：把 `readOnly:['/']` 换成系统路径白名单 + 用户自己的 workspace，是单 OS 账号内闭合读缺口的最小改动，优先于全容器。
-3. 凭据：`credential_vault` 密文引用 + 应用级加密，key 只在 spawn 时注入子进程 env。
+账号级隔离已落地（Linux-only）：每个用户一个独立 OS 账号，编排服务 spawn 子 DSH 时用 `setpriv --reuid <uid>` 降权，`0700` 目录才真正生效、闭合同 UID 越权读。
 
-> 是否在软隔离阶段就上线（P1–P6）由运营方决定；本文件把缺口与升级路径写死，避免误当"已隔离"。
+- 确定性 uid：`uidForUser(userId, baseUid)`（`src/isolation.ts`），`dsh-server-login uid-for-user` 供部署脚本取同一 uid。
+- 配置：`isolationMode: 'account'` + `spawnAsUserCommand`（默认 `setpriv --reuid {UID} --regid {GID} --inh-caps=-all --clear-groups --`）。
+- 运行时插件 `dsh-server-login/runtime`（本 bundle 内，不动 harness）读 env 契约（端口/角色/handoff）。
+- 详细步骤见 [deployment.md](deployment.md)。
+
+**更强选项（未默认，按需）**：每用户容器（runc/systemd-nspawn，私有挂载命名空间 + 只读 rootfs）；或收窄 Landlock 读授权（`readOnly:['/']` → 系统路径白名单 + 用户 workspace）作纵深防御。
