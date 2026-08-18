@@ -27,6 +27,12 @@
 - **根因**：DSH 的 SPA（Vite）资源用**绝对路径**（`/assets/*`、`/api/*`），假设自己挂在域名根 `/`。子路径 `/u/<id>/dsh/*` 下，这些绝对路径会打到域名根 → 404；连 `/api` 也会打到编排服务自己的 API。**子路径方案与这个 SPA 从根上不兼容**。
 - **修法**：改**每用户子域名** `<用户名>.<baseDomain>`，SPA 挂在自己域名根，绝对路径天然成立（含 HTTP 与 WebSocket 均已由编排服务转发）。
 
+## 403：DSH 功能请求报 transport failure / HTTP 403（如 /api/settings.describe）
+
+- **现象**：DSH 页面能加载，但功能 API（`/api/settings.describe`、`/api/host.describe` 等）返回 403，前端报 "transport failure for /api/xxx: HTTP 403"。
+- **根因**：harness 的 `/api` 浏览器信任栅栏（`api-request-trust.ts`）检查 Origin——`origin.host` 必须等于 `host.host`。代理把 `host` 改成 loopback（`127.0.0.1:port`）却原样转发了浏览器的 `origin`（子域名）→ 不匹配 → 403。
+- **修法**：代理到 DSH 时剥掉 `origin` / `referer` / `sec-fetch-*` / `x-forwarded-*`，只保留 loopback `host`（已内置在 [proxy.ts](../src/supervisor/proxy.ts) 的 `buildUpstreamHeaders`）。
+
 ## ERR_SSL_VERSION_OR_CIPHER_MISMATCH
 
 - **根因**：子域名没有覆盖它的证书（只有主域单域证书）。

@@ -10,13 +10,38 @@
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { Agent, request as httpRequest, type IncomingMessage } from 'node:http'
+import { Agent, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http'
 import { connect } from 'node:net'
 import { findSessionWithUser, findUserBySlug } from '../db/repo.js'
 import { hashSessionToken, parseCookie } from '../web/auth.js'
 import { requireAuth } from '../web/middleware/authn.js'
 
 const upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
+
+// Headers the DSH's browser-trust fence must NOT see from the browser, so the
+// proxied request looks like a clean loopback client (its Host is overridden to
+// loopback; a mismatched Origin would otherwise 403).
+const STRIP_HEADERS = new Set([
+  'origin',
+  'referer',
+  'sec-fetch-site',
+  'sec-fetch-mode',
+  'sec-fetch-dest',
+  'sec-fetch-user',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-forwarded-proto',
+])
+
+function buildUpstreamHeaders(headers: IncomingHttpHeaders, port: number): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined || STRIP_HEADERS.has(key.toLowerCase())) continue
+    out[key] = value as string | string[]
+  }
+  out.host = `127.0.0.1:${port}`
+  return out
+}
 
 /** Extract `<slug>` from `<slug>.<baseDomain>`, or null when not a match. */
 export function parseSubdomain(host: string | undefined, baseDomain: string): string | null {
@@ -79,7 +104,7 @@ function proxyHttp(
       path: targetPath,
       method: request.method,
       agent: upstreamAgent,
-      headers: { ...request.headers, host: `127.0.0.1:${port}` },
+      headers: buildUpstreamHeaders(request.headers, port),
     },
     (upRes: IncomingMessage) => {
       const headers = { ...upRes.headers }
@@ -142,8 +167,11 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
     upstream.on('connect', () => {
       const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
+        const name = (req.rawHeaders[i] ?? '').toLowerCase()
+        if (name === 'host' || STRIP_HEADERS.has(name)) continue
         lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`)
       }
+      lines.push(`Host: 127.0.0.1:${access.port}`)
       upstream.write(lines.join('\r\n') + '\r\n\r\n')
       if (head !== undefined && head.length > 0) upstream.write(head)
       socket.pipe(upstream)
