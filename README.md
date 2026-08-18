@@ -67,7 +67,7 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 
 ## 发布
 
-按 DSH 插件市场的 [STANDARD.md](STANDARD.md) 以 **cordis-plugin（产物型）** 分发：提交 `lib/` 构建产物，`main` 指向 `lib/index.js`，`prepare` 供 git 安装自构建。发布前替换 `package.json` 的 `repository.url` 为真实地址、给 GitHub 仓库加 topic `dsh-plugin`、确认 `name` 唯一（当前 `dsh-server-login` 在 npm 未被占用）。
+按 DSH 插件市场的 [STANDARD.md](STANDARD.md) 以 **cordis-plugin（产物型）** 分发：提交 `lib/` 构建产物，`main` 指向 `lib/index.js`，`prepare` 供 git 安装自构建。发布前给 GitHub 仓库加 topic `dsh-plugin`、确认 `name` 唯一（当前 `dsh-server-login` 在 npm 未被占用）。
 
 ## 许可证
 

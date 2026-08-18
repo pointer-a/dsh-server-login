@@ -72,7 +72,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/dsh-server-login.git"
+    "url": "https://github.com/pointer-a/dsh-server-login.git"
   },
   "license": "MIT"
 }
