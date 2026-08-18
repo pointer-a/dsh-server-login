@@ -175,8 +175,7 @@
           ? `运行中（端口 ${body.instance.port}）`
           : '未运行'
         if (running) {
-          const user = await me()
-          document.getElementById('dshLink').href = `/u/${user.id}/dsh/`
+          document.getElementById('dshLink').href = body.url
         }
       }
       document.getElementById('launchBtn').addEventListener('click', async () => {

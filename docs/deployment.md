@@ -54,6 +54,8 @@ dsh-server-login bootstrap-admin --username admin --password '<强密码>' --dat
 | `DSH_SERVER_LOGIN_DSH_BIN` | `dsh` | 子 DSH 可执行 |
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `true` | HTTPS 下必须 |
 | `DSH_SERVER_LOGIN_PORT` | `3080` | 编排服务绑定（与 nginx 上游一致） |
+| `DSH_SERVER_LOGIN_BASE_DOMAIN` | `dsh.xulei1112.cloud` | 每用户子域名后缀（`<用户名>.<baseDomain>`） |
+| `DSH_SERVER_LOGIN_COOKIE_DOMAIN` | `.dsh.xulei1112.cloud` | 会话 cookie 的 `Domain`（让登录态覆盖子域名） |
 
 降权命令默认是 `setpriv --reuid {UID} --regid {GID} --inh-caps=-all --clear-groups --`；可用 `spawnAsUserCommand`（配置/环境变量 `DSH_SERVER_LOGIN_SPAWN_AS_USER`）覆盖。
 
@@ -88,11 +90,40 @@ dsh plugin --profile web add dsh-server-login
 
 ## 6. nginx + 域名 + TLS
 
-默认域名 + 每用户子路径，以及自定义域名，见 [docs/domain-config.md](domain-config.md)。核心是把一切透传给 `127.0.0.1:3080`，并开启 WebSocket 升级头。
+**每用户子域名**是默认访问方式（DSH 的 SPA 用绝对路径，必须挂在独立域名根下）。编排服务按 `Host` 头把 `<用户名>.dsh.xulei1112.cloud` 路由到该用户的 DSH。nginx 用通配把一切透传、保留原始 Host、开 WebSocket：
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name *.dsh.xulei1112.cloud;
+
+    ssl_certificate     /etc/letsencrypt/live/dsh.xulei1112.cloud/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dsh.xulei1112.cloud/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3080;
+        proxy_set_header Host              $host;   # 关键：保留原始子域名
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+    }
+}
+```
+
+通配证书：
 
 ```sh
-certbot --nginx -d dsh.example.com
+certbot certonly --dns-cloudflare -d '*.dsh.xulei1112.cloud' -d 'dsh.xulei1112.cloud'
 ```
+
+编排服务自己的管理台/桌面走主域 `dsh.xulei1112.cloud`（另配一条 `server_name dsh.xulei1112.cloud` 指向 `127.0.0.1:3080`）。自定义域名见 [docs/domain-config.md](domain-config.md)。
 
 ## 7. systemd 托管编排服务
 

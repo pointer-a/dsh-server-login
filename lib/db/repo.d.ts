@@ -44,6 +44,8 @@ export interface CreateUserInput {
 }
 export declare function createUser(db: Database, input: CreateUserInput): User;
 export declare function findUserByUsername(db: Database, username: string): User | undefined;
+/** Case-insensitive username lookup (for subdomain routing). */
+export declare function findUserBySlug(db: Database, slug: string): User | undefined;
 export declare function findUserById(db: Database, id: string): User | undefined;
 export declare function listPublicUsers(db: Database): PublicUser[];
 export declare function countAdmins(db: Database): number;

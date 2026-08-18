@@ -1,14 +1,16 @@
 /**
- * Reverse proxy from the orchestrator to a running per-user DSH web UI.
+ * Reverse proxy from the orchestrator to a running per-user DSH.
  *
- * P3 proxies plain HTTP. WebSocket upgrade and absolute-path/Location rewriting
- * are deferred (see docs/blueprint.md §1b) — nginx in P6 is the intended
- * termination point for those.
+ * Two entry points:
+ * - subpath `/u/:slug/dsh/*` (authenticated, legacy), and
+ * - per-user subdomain `<username>.<baseDomain>` (HTTP + WebSocket). The DSH's
+ *   absolute-path SPA requires the subdomain form: its `/assets/*` and `/api/*`
+ *   resolve against the host root, which only works when each DSH owns a host.
  * @module dsh-server-login/supervisor/proxy
  */
 import type { FastifyInstance } from 'fastify';
-/**
- * Register the authenticated `/u/:slug/dsh/*` proxy. The `:slug` is the user id;
- * a caller can only proxy their own instance.
- */
+/** Extract `<slug>` from `<slug>.<baseDomain>`, or null when not a match. */
+export declare function parseSubdomain(host: string | undefined, baseDomain: string): string | null;
+/** The per-user subdomain for a username, or null when `baseDomain` is unset. */
+export declare function subdomainForUser(baseDomain: string, username: string): string | null;
 export declare function registerDshProxy(app: FastifyInstance): Promise<void>;

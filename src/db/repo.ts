@@ -102,6 +102,12 @@ export function findUserByUsername(db: Database, username: string): User | undef
   return row ? toUser(row as Record<string, unknown>) : undefined
 }
 
+/** Case-insensitive username lookup (for subdomain routing). */
+export function findUserBySlug(db: Database, slug: string): User | undefined {
+  const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE LOWER(username) = ?`).get(slug.toLowerCase())
+  return row ? toUser(row as Record<string, unknown>) : undefined
+}
+
 export function findUserById(db: Database, id: string): User | undefined {
   const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id)
   return row ? toUser(row as Record<string, unknown>) : undefined

@@ -15,7 +15,7 @@ import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
 import { findWorkspaceByPath, getEnabledPluginIds } from '../../db/repo.js'
 import { AlreadyRunningError } from '../../supervisor/orchestrator.js'
 import { renderPatch } from '../../supervisor/patch.js'
-import { registerDshProxy } from '../../supervisor/proxy.js'
+import { subdomainForUser } from '../../supervisor/proxy.js'
 
 const launchSchema = {
   body: {
@@ -37,6 +37,11 @@ const restartSchema = {
 
 function alive(status: string | undefined): boolean {
   return status !== undefined && status !== 'crashed' && status !== 'stopped'
+}
+
+function dshUrl(baseDomain: string, user: { id: string; username: string }): string {
+  const sub = subdomainForUser(baseDomain, user.username)
+  return sub !== null ? `https://${sub}/` : `/u/${user.id}/dsh/`
 }
 
 export const dshRoutes: FastifyPluginAsync = async (app) => {
@@ -73,7 +78,7 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       const instance = await app.supervisor.launch(user.id, folderAbs, patchPath)
       return {
         instance: { id: instance.id, port: instance.port, status: instance.status },
-        url: `/u/${user.id}/dsh/`,
+        url: dshUrl(app.config.baseDomain, user),
       }
     } catch (err) {
       if (err instanceof AlreadyRunningError) return reply.code(409).send({ error: 'already_running' })
@@ -92,7 +97,7 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
     await app.supervisor.spawnWatchdog(user.id)
     return {
       instance: { id: instance.id, port: instance.port, status: instance.status },
-      url: `/u/${user.id}/dsh/`,
+      url: dshUrl(app.config.baseDomain, user),
     }
   })
 
@@ -109,8 +114,8 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
         ? { id: main.id, port: main.port, status: main.status, exitCode: main.exitCode, lastError: main.lastError }
         : null,
       watchdog: watchdog ? { id: watchdog.id, status: watchdog.status, exitCode: watchdog.exitCode } : null,
+      url: dshUrl(app.config.baseDomain, request.user!),
     }
   })
 
-  await registerDshProxy(app)
 }

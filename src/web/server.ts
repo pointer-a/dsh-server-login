@@ -12,6 +12,7 @@ import type { ServerConfig } from '../config.js'
 import { openDatabase, type Database } from '../db/connection.js'
 import type { PublicUser } from '../db/repo.js'
 import { Supervisor } from '../supervisor/orchestrator.js'
+import { registerDshProxy } from '../supervisor/proxy.js'
 import { rateLimit } from './middleware/rate-limit.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
@@ -52,6 +53,10 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
   app.decorate('config', config)
   app.decorate('supervisor', supervisor)
   app.decorateRequest('user', null)
+
+  // Reverse proxy (subdomain + legacy subpath). Registered first so its global
+  // onRequest hook intercepts per-user subdomain traffic before other hooks.
+  await registerDshProxy(app)
 
   app.addHook('onClose', async () => {
     supervisor.teardown()

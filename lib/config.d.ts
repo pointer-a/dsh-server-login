@@ -42,6 +42,10 @@ export interface ServerConfig {
     spawnAsUserCommand: string[];
     /** Base uid for the deterministic per-user uid. */
     baseUid: number;
+    /** Parent domain for per-user subdomains (`<username>.<baseDomain>`); empty = disabled. */
+    baseDomain: string;
+    /** Cookie `Domain` value (e.g. `.example.com`) so the session reaches subdomains; empty = host-only. */
+    cookieDomain: string;
 }
 /** Untyped overrides collected from argv / env. */
 export interface ConfigOverrides {
@@ -59,6 +63,8 @@ export interface ConfigOverrides {
     isolationMode?: IsolationMode;
     spawnAsUserCommand?: string[];
     baseUid?: number | string;
+    baseDomain?: string;
+    cookieDomain?: string;
 }
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to

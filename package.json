@@ -29,7 +29,8 @@
     "smoke:plugins": "node scripts/smoke-plugins.mjs",
     "smoke:watchdog": "node scripts/smoke-watchdog.mjs",
     "smoke:domain": "node scripts/smoke-domain.mjs",
-    "smoke:isolation": "node scripts/smoke-isolation.mjs"
+    "smoke:isolation": "node scripts/smoke-isolation.mjs",
+    "smoke:subdomain": "node scripts/smoke-subdomain.mjs"
   },
   "dsh": {
     "plugin": true,
