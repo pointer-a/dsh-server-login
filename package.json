@@ -1,7 +1,7 @@
 {
   "name": "dsh-server-login",
   "version": "0.1.0",
-  "description": "DSH 服务端登录插件：多租户托管平台，让用户通过域名安全访问自己的 DSH 实例（主 + 守护）。",
+  "description": "面向公网的多租户 DSH 托管平台：登录审核、每用户隔离的 DSH 环境（主 + 按需守护）、桌面与域名访问。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
