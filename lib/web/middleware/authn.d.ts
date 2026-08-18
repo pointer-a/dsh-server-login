@@ -1,9 +1,10 @@
 /**
  * Authentication / authorization guards.
  *
- * `requireAuth` resolves the session cookie into `request.user` (a PublicUser);
- * `requireAdmin` additionally enforces the admin role. Both reject with 401/403
- * and never continue the handler.
+ * `requireAuth` resolves the session cookie into `request.user` (a PublicUser)
+ * with a single `sessions JOIN users` lookup; `requireAdmin` additionally
+ * enforces the admin role. Both reject with 401/403 and never continue the
+ * handler.
  * @module dsh-server-login/web/middleware/authn
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';

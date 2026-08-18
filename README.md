@@ -39,7 +39,7 @@ node lib/cli.js --port 0 --db ./dev.local.db
 
 ## 分阶段路线
 
-见 [docs/roadmap.md](docs/roadmap.md)。完整技术设计见 [docs/blueprint.md](docs/blueprint.md)。域名与 nginx 配置示例见 [docs/domain-config.md](docs/domain-config.md)。
+见 [docs/roadmap.md](docs/roadmap.md)。完整技术设计见 [docs/blueprint.md](docs/blueprint.md)。域名与 nginx 配置示例见 [docs/domain-config.md](docs/domain-config.md)。性能占用与冷启动实测见 [docs/performance.md](docs/performance.md)。
 
 ## 发布
 

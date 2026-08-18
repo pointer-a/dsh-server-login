@@ -8,6 +8,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Database } from './connection.js'
+import { prepare } from './prepared.js'
 
 export type UserRole = 'admin' | 'pending' | 'active' | 'disabled'
 
@@ -81,7 +82,7 @@ export interface CreateUserInput {
 
 export function createUser(db: Database, input: CreateUserInput): User {
   const createdAt = Date.now()
-  db.prepare(
+  prepare(db,
     'INSERT INTO users (id, username, pass_hash, role, home_dir, created_at) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(input.id, input.username, input.passHash, input.role, input.homeDir, createdAt)
   return {
@@ -97,32 +98,32 @@ export function createUser(db: Database, input: CreateUserInput): User {
 }
 
 export function findUserByUsername(db: Database, username: string): User | undefined {
-  const row = db.prepare(`SELECT ${USER_COLS} FROM users WHERE username = ?`).get(username)
+  const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE username = ?`).get(username)
   return row ? toUser(row as Record<string, unknown>) : undefined
 }
 
 export function findUserById(db: Database, id: string): User | undefined {
-  const row = db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id)
+  const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id)
   return row ? toUser(row as Record<string, unknown>) : undefined
 }
 
 export function listPublicUsers(db: Database): PublicUser[] {
-  const rows = db.prepare(`SELECT ${USER_COLS} FROM users ORDER BY created_at ASC`).all() as Array<
+  const rows = prepare(db,`SELECT ${USER_COLS} FROM users ORDER BY created_at ASC`).all() as Array<
     Record<string, unknown>
   >
   return rows.map((row) => toPublicUser(toUser(row)))
 }
 
 export function countAdmins(db: Database): number {
-  const row = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin'`).get() as { n: number }
+  const row = prepare(db,`SELECT COUNT(*) AS n FROM users WHERE role = 'admin'`).get() as { n: number }
   return row.n
 }
 
 export function setUserRole(db: Database, id: string, role: UserRole, approvedBy?: string): boolean {
   const info =
     approvedBy === undefined
-      ? db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id)
-      : db.prepare('UPDATE users SET role = ?, approved_by = ? WHERE id = ?').run(role, approvedBy, id)
+      ? prepare(db,'UPDATE users SET role = ? WHERE id = ?').run(role, id)
+      : prepare(db,'UPDATE users SET role = ?, approved_by = ? WHERE id = ?').run(role, approvedBy, id)
   return info.changes > 0
 }
 
@@ -135,29 +136,28 @@ export interface CreateSessionInput {
 }
 
 export function createSession(db: Database, input: CreateSessionInput): void {
-  db.prepare(
+  prepare(db,
     'INSERT INTO sessions (token_hash, user_id, created_at, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(input.tokenHash, input.userId, Date.now(), input.expiresAt, input.ip ?? null, input.userAgent ?? null)
 }
 
 export function findSession(db: Database, tokenHash: string): SessionRow | undefined {
-  const row = db
-    .prepare('SELECT token_hash, user_id, created_at, expires_at, ip, user_agent FROM sessions WHERE token_hash = ?')
+  const row = prepare(db, 'SELECT token_hash, user_id, created_at, expires_at, ip, user_agent FROM sessions WHERE token_hash = ?')
     .get(tokenHash)
   return row ? toSession(row as Record<string, unknown>) : undefined
 }
 
 export function deleteSession(db: Database, tokenHash: string): void {
-  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)
+  prepare(db,'DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)
 }
 
 export function deleteUserSessions(db: Database, userId: string): void {
-  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId)
+  prepare(db,'DELETE FROM sessions WHERE user_id = ?').run(userId)
 }
 
 /** Append an audit entry. `actor` is a user id or `'system'`. */
 export function audit(db: Database, actor: string | null, action: string, detail?: string | null): void {
-  db.prepare('INSERT INTO audit_log (ts, actor, action, detail) VALUES (?, ?, ?, ?)').run(
+  prepare(db,'INSERT INTO audit_log (ts, actor, action, detail) VALUES (?, ?, ?, ?)').run(
     Date.now(),
     actor,
     action,
@@ -185,8 +185,7 @@ function toWorkspace(row: Record<string, unknown>): Workspace {
 }
 
 export function findWorkspaceByPath(db: Database, userId: string, relPath: string): Workspace | undefined {
-  const row = db
-    .prepare('SELECT id, user_id, name, rel_path, created_at FROM workspaces WHERE user_id = ? AND rel_path = ?')
+  const row = prepare(db, 'SELECT id, user_id, name, rel_path, created_at FROM workspaces WHERE user_id = ? AND rel_path = ?')
     .get(userId, relPath)
   return row ? toWorkspace(row as Record<string, unknown>) : undefined
 }
@@ -198,7 +197,7 @@ export function getOrCreateWorkspace(db: Database, userId: string, relPath: stri
   const id = randomUUID()
   const segments = relPath.split('/').filter(Boolean)
   const name = segments.at(-1) ?? 'root'
-  db.prepare('INSERT INTO workspaces (id, user_id, name, rel_path, created_at) VALUES (?, ?, ?, ?, ?)').run(
+  prepare(db,'INSERT INTO workspaces (id, user_id, name, rel_path, created_at) VALUES (?, ?, ?, ?, ?)').run(
     id,
     userId,
     name,
@@ -215,8 +214,8 @@ export function setFolderPlugins(
   selections: ReadonlyArray<{ id: string; enabled: boolean }>,
 ): void {
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM folder_plugins WHERE workspace_id = ?').run(workspaceId)
-    const insert = db.prepare(
+    prepare(db,'DELETE FROM folder_plugins WHERE workspace_id = ?').run(workspaceId)
+    const insert = prepare(db,
       'INSERT INTO folder_plugins (workspace_id, plugin_id, enabled, updated_at) VALUES (?, ?, ?, ?)',
     )
     for (const selection of selections) {
@@ -228,8 +227,7 @@ export function setFolderPlugins(
 
 /** Enabled plugin ids for a workspace. */
 export function getEnabledPluginIds(db: Database, workspaceId: string): string[] {
-  const rows = db
-    .prepare('SELECT plugin_id FROM folder_plugins WHERE workspace_id = ? AND enabled = 1')
+  const rows = prepare(db, 'SELECT plugin_id FROM folder_plugins WHERE workspace_id = ? AND enabled = 1')
     .all(workspaceId) as Array<{ plugin_id: string }>
   return rows.map((row) => row.plugin_id)
 }
@@ -258,17 +256,17 @@ function toDomain(row: Record<string, unknown>): Domain {
 const DOMAIN_COLS = 'id, user_id, domain, verified, nginx_config, updated_at'
 
 export function findDomainByUser(db: Database, userId: string): Domain | undefined {
-  const row = db.prepare(`SELECT ${DOMAIN_COLS} FROM domains WHERE user_id = ?`).get(userId)
+  const row = prepare(db,`SELECT ${DOMAIN_COLS} FROM domains WHERE user_id = ?`).get(userId)
   return row ? toDomain(row as Record<string, unknown>) : undefined
 }
 
 export function findDomainById(db: Database, id: string): Domain | undefined {
-  const row = db.prepare(`SELECT ${DOMAIN_COLS} FROM domains WHERE id = ?`).get(id)
+  const row = prepare(db,`SELECT ${DOMAIN_COLS} FROM domains WHERE id = ?`).get(id)
   return row ? toDomain(row as Record<string, unknown>) : undefined
 }
 
 export function listDomains(db: Database): Domain[] {
-  const rows = db.prepare(`SELECT ${DOMAIN_COLS} FROM domains ORDER BY updated_at DESC`).all() as Array<
+  const rows = prepare(db,`SELECT ${DOMAIN_COLS} FROM domains ORDER BY updated_at DESC`).all() as Array<
     Record<string, unknown>
   >
   return rows.map((row) => toDomain(row))
@@ -276,7 +274,7 @@ export function listDomains(db: Database): Domain[] {
 
 /** Upsert a user's custom domain (resetting `verified` to 0). */
 export function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain {
-  db.prepare(`
+  prepare(db,`
     INSERT INTO domains (id, user_id, domain, verified, nginx_config, updated_at)
     VALUES (?, ?, ?, 0, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
@@ -290,8 +288,26 @@ export function upsertDomain(db: Database, userId: string, domain: string, nginx
 
 /** Set the verified flag on a domain. */
 export function setDomainVerified(db: Database, id: string, verified: boolean): boolean {
-  const info = db
-    .prepare('UPDATE domains SET verified = ?, updated_at = ? WHERE id = ?')
+  const info = prepare(db, 'UPDATE domains SET verified = ?, updated_at = ? WHERE id = ?')
     .run(verified ? 1 : 0, Date.now(), id)
   return info.changes > 0
+}
+
+/** A session joined with its user, for the authn hot path (one query). */
+export interface SessionUser {
+  expiresAt: number
+  user: User
+}
+
+/** Look up a session and its user in a single join. */
+export function findSessionWithUser(db: Database, tokenHash: string): SessionUser | undefined {
+  const row = prepare(
+    db,
+    `SELECT u.id, u.username, u.pass_hash, u.role, u.home_dir, u.api_key_ref, u.created_at, u.approved_by,
+            s.expires_at
+     FROM sessions s JOIN users u ON s.user_id = u.id
+     WHERE s.token_hash = ?`,
+  ).get(tokenHash) as Record<string, unknown> | undefined
+  if (row === undefined) return undefined
+  return { expiresAt: row.expires_at as number, user: toUser(row) }
 }

@@ -16,5 +16,5 @@ export interface FsEntry {
     size: number;
     mtimeMs: number;
 }
-/** List the immediate children of a directory. */
-export declare function listDir(absPath: string): FsEntry[];
+/** List the immediate children of a directory (async, non-blocking). */
+export declare function listDir(absPath: string): Promise<FsEntry[]>;

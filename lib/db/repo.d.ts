@@ -95,3 +95,10 @@ export declare function listDomains(db: Database): Domain[];
 export declare function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain;
 /** Set the verified flag on a domain. */
 export declare function setDomainVerified(db: Database, id: string, verified: boolean): boolean;
+/** A session joined with its user, for the authn hot path (one query). */
+export interface SessionUser {
+    expiresAt: number;
+    user: User;
+}
+/** Look up a session and its user in a single join. */
+export declare function findSessionWithUser(db: Database, tokenHash: string): SessionUser | undefined;

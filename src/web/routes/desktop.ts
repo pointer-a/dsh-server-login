@@ -6,7 +6,7 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
 import { resolveWithinRoot, safeFilename } from '../middleware/fs-guard.js'
@@ -46,7 +46,7 @@ export const desktopRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'bad_path' })
     }
     try {
-      return { path, entries: listDir(abs) }
+      return { path, entries: await listDir(abs) }
     } catch {
       return reply.code(404).send({ error: 'not_found' })
     }
@@ -63,7 +63,7 @@ export const desktopRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'bad_path' })
     }
     try {
-      mkdirSync(abs)
+      await mkdir(abs)
       return { ok: true }
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
@@ -96,7 +96,7 @@ export const desktopRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'bad_data' })
     }
     try {
-      writeFileSync(join(dirAbs, filename), buf)
+      await writeFile(join(dirAbs, filename), buf)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return reply.code(404).send({ error: 'parent_missing' })
       throw err

@@ -5,7 +5,8 @@
  * @module dsh-server-login/fs/workspace
  */
 
-import { mkdirSync, readdirSync, statSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
+import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 
@@ -27,16 +28,18 @@ export interface FsEntry {
   mtimeMs: number
 }
 
-/** List the immediate children of a directory. */
-export function listDir(absPath: string): FsEntry[] {
-  const entries = readdirSync(absPath, { withFileTypes: true })
-  return entries.map((entry) => {
-    const stat = statSync(join(absPath, entry.name))
-    return {
+/** List the immediate children of a directory (async, non-blocking). */
+export async function listDir(absPath: string): Promise<FsEntry[]> {
+  const entries = await readdir(absPath, { withFileTypes: true })
+  const result: FsEntry[] = []
+  for (const entry of entries) {
+    const st = await stat(join(absPath, entry.name))
+    result.push({
       name: entry.name,
-      type: stat.isDirectory() ? 'dir' : 'file',
-      size: stat.isFile() ? stat.size : 0,
-      mtimeMs: stat.mtimeMs,
-    }
-  })
+      type: st.isDirectory() ? 'dir' : 'file',
+      size: st.isFile() ? st.size : 0,
+      mtimeMs: st.mtimeMs,
+    })
+  }
+  return result
 }

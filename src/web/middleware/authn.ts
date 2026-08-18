@@ -1,14 +1,15 @@
 /**
  * Authentication / authorization guards.
  *
- * `requireAuth` resolves the session cookie into `request.user` (a PublicUser);
- * `requireAdmin` additionally enforces the admin role. Both reject with 401/403
- * and never continue the handler.
+ * `requireAuth` resolves the session cookie into `request.user` (a PublicUser)
+ * with a single `sessions JOIN users` lookup; `requireAdmin` additionally
+ * enforces the admin role. Both reject with 401/403 and never continue the
+ * handler.
  * @module dsh-server-login/web/middleware/authn
  */
 
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { findSession, findUserById, toPublicUser } from '../../db/repo.js'
+import { findSessionWithUser, toPublicUser } from '../../db/repo.js'
 import { hashSessionToken, parseCookie } from '../auth.js'
 
 /** Resolve the session cookie into `request.user`, or reject 401. */
@@ -18,17 +19,12 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
     reply.code(401).send({ error: 'unauthorized' })
     return
   }
-  const session = findSession(request.server.db, hashSessionToken(token))
-  if (session === undefined || session.expires_at <= Date.now()) {
+  const row = findSessionWithUser(request.server.db, hashSessionToken(token))
+  if (row === undefined || row.expiresAt <= Date.now() || row.user.role === 'disabled') {
     reply.code(401).send({ error: 'unauthorized' })
     return
   }
-  const user = findUserById(request.server.db, session.user_id)
-  if (user === undefined || user.role === 'disabled') {
-    reply.code(401).send({ error: 'unauthorized' })
-    return
-  }
-  request.user = toPublicUser(user)
+  request.user = toPublicUser(row.user)
 }
 
 /** Require an authenticated admin; rejects non-admins with 403. */

@@ -8,8 +8,11 @@
  */
 
 import type { FastifyInstance } from 'fastify'
-import { request as httpRequest } from 'node:http'
+import { Agent, request as httpRequest } from 'node:http'
 import { requireAuth } from '../web/middleware/authn.js'
+
+/** Keep-alive agent so proxied subresource requests reuse upstream connections. */
+const upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
 
 /**
  * Register the authenticated `/u/:slug/dsh/*` proxy. The `:slug` is the user id;
@@ -39,6 +42,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
         port,
         path: targetPath,
         method: request.method,
+        agent: upstreamAgent,
         headers: { ...request.headers, host: `127.0.0.1:${port}` },
       },
       (upRes) => {
