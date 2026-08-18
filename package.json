@@ -22,7 +22,8 @@
     "dev": "node lib/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "smoke:auth": "node scripts/smoke-auth.mjs"
+    "smoke:auth": "node scripts/smoke-auth.mjs",
+    "smoke:fs": "node scripts/smoke-fs.mjs"
   },
   "dsh": {
     "plugin": true,

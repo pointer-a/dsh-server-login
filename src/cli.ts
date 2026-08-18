@@ -57,6 +57,7 @@ function toOverrides(values: ParsedValues): ConfigOverrides {
     logLevel: str(values['log-level']),
     secureCookies: values['secure-cookies'] === true ? true : undefined,
     sessionTtlSeconds: str(values['session-ttl']),
+    maxUploadBytes: str(values['max-upload']),
   }
 }
 
@@ -105,6 +106,7 @@ async function runServer(args: string[]): Promise<void> {
       'log-level': { type: 'string' },
       'secure-cookies': { type: 'boolean' },
       'session-ttl': { type: 'string' },
+      'max-upload': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   })

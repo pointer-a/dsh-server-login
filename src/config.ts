@@ -25,6 +25,8 @@ export interface ServerConfig {
   secureCookies: boolean
   /** Session lifetime in seconds. */
   sessionTtlSeconds: number
+  /** Max upload request body in bytes (base64 JSON; ~0.75× the file size). */
+  maxUploadBytes: number
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -37,6 +39,7 @@ export interface ConfigOverrides {
   logLevel?: string
   secureCookies?: boolean
   sessionTtlSeconds?: number | string
+  maxUploadBytes?: number | string
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -44,6 +47,7 @@ const DEFAULT_PORT = 3080
 const DEFAULT_DSH_BIN = 'dsh'
 const DEFAULT_LOG_LEVEL = 'info'
 const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
+const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
@@ -70,6 +74,9 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
       overrides.secureCookies ?? toBool(process.env.DSH_SERVER_LOGIN_SECURE_COOKIES, false),
     sessionTtlSeconds: Number(
       overrides.sessionTtlSeconds ?? process.env.DSH_SERVER_LOGIN_SESSION_TTL ?? DEFAULT_SESSION_TTL_SECONDS,
+    ),
+    maxUploadBytes: Number(
+      overrides.maxUploadBytes ?? process.env.DSH_SERVER_LOGIN_MAX_UPLOAD ?? DEFAULT_MAX_UPLOAD_BYTES,
     ),
   }
 }

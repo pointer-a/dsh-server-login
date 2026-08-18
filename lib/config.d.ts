@@ -21,6 +21,8 @@ export interface ServerConfig {
     secureCookies: boolean;
     /** Session lifetime in seconds. */
     sessionTtlSeconds: number;
+    /** Max upload request body in bytes (base64 JSON; ~0.75× the file size). */
+    maxUploadBytes: number;
 }
 /** Untyped overrides collected from argv / env. */
 export interface ConfigOverrides {
@@ -32,6 +34,7 @@ export interface ConfigOverrides {
     logLevel?: string;
     secureCookies?: boolean;
     sessionTtlSeconds?: number | string;
+    maxUploadBytes?: number | string;
 }
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to

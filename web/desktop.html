@@ -4,9 +4,162 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>桌面 — dsh-server-login</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 2rem auto; padding: 0 1rem; }
+      .bar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }
+      table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+      th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #8884; }
+      .dir { cursor: pointer; color: #2980b9; }
+      .dir:hover { text-decoration: underline; }
+      .hidden { display: none; }
+      button { padding: 0.3rem 0.7rem; }
+    </style>
   </head>
   <body>
-    <h1>桌面（TODO）</h1>
-    <p>用户文件浏览、按文件夹启动 DSH、选择启用哪些插件。P2/P3/P4 实现。</p>
+    <h1>桌面</h1>
+    <div class="bar">
+      <span>登录为 <strong id="who"></strong></span>
+      <button id="logoutBtn">退出</button>
+      <button id="newFolderBtn">新建文件夹</button>
+      <button id="uploadBtn">上传文件</button>
+      <input id="fileInput" type="file" class="hidden" />
+    </div>
+    <div class="bar">
+      路径：
+      <span id="breadcrumb"></span>
+    </div>
+    <table>
+      <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <script>
+      let currentPath = [] // array of path segments; [] = root
+
+      const rows = document.getElementById('rows')
+      const breadcrumb = document.getElementById('breadcrumb')
+
+      async function me() {
+        const res = await fetch('/api/auth/me')
+        if (!res.ok) return null
+        return (await res.json()).user
+      }
+
+      function fmtSize(bytes) {
+        if (bytes === 0) return '—'
+        const units = ['B', 'KB', 'MB', 'GB']
+        let i = 0
+        let n = bytes
+        while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+        return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+      }
+
+      function pathString() {
+        return currentPath.join('/')
+      }
+
+      function renderBreadcrumb() {
+        const parts = ['<span class="dir" data-path="">根</span>']
+        let acc = []
+        for (const seg of currentPath) {
+          acc.push(seg)
+          const p = acc.join('/')
+          parts.push(` / <span class="dir" data-path="${p}">${seg}</span>`)
+        }
+        breadcrumb.innerHTML = parts.join('')
+        breadcrumb.querySelectorAll('.dir').forEach((el) => el.addEventListener('click', () => {
+          navigate(el.dataset.path)
+        }))
+      }
+
+      async function navigate(path) {
+        currentPath = path ? path.split('/').filter(Boolean) : []
+        await load()
+      }
+
+      async function load() {
+        const path = pathString()
+        const res = await fetch('/api/desktop/tree' + (path ? `?path=${encodeURIComponent(path)}` : ''))
+        const body = await res.json()
+        rows.innerHTML = ''
+        if (path) {
+          rows.insertAdjacentHTML('beforeend', `<tr><td class="dir" data-up="1">..</td><td></td><td></td><td></td></tr>`)
+        }
+        for (const entry of body.entries || []) {
+          const typeLabel = entry.type === 'dir' ? '文件夹' : '文件'
+          const nameCell = entry.type === 'dir'
+            ? `<span class="dir" data-path="${encodeURIComponent(path ? path + '/' + entry.name : entry.name)}">${entry.name}</span>`
+            : entry.name
+          rows.insertAdjacentHTML(
+            'beforeend',
+            `<tr><td>${nameCell}</td><td>${typeLabel}</td><td>${fmtSize(entry.size)}</td><td>${new Date(
+              entry.mtimeMs,
+            ).toLocaleString()}</td></tr>`,
+          )
+        }
+        renderBreadcrumb()
+        rows.querySelectorAll('.dir[data-path]').forEach((el) =>
+          el.addEventListener('click', () => navigate(decodeURIComponent(el.dataset.path))),
+        )
+        const up = rows.querySelector('.dir[data-up]')
+        if (up) up.addEventListener('click', () => navigate(currentPath.slice(0, -1).join('/')))
+      }
+
+      async function api(path, options) {
+        const res = await fetch(path, {
+          ...options,
+          headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+        })
+        if (!res.ok) {
+          alert(`操作失败：${(await res.json().catch(() => ({}))).error || res.status}`)
+          return null
+        }
+        return res.json()
+      }
+
+      document.getElementById('newFolderBtn').addEventListener('click', async () => {
+        const name = prompt('文件夹名称')
+        if (!name) return
+        await api('/api/fs/mkdir', {
+          method: 'POST',
+          body: JSON.stringify({ path: pathString() ? pathString() + '/' + name : name }),
+        })
+        await load()
+      })
+
+      document.getElementById('uploadBtn').addEventListener('click', () => document.getElementById('fileInput').click())
+      document.getElementById('fileInput').addEventListener('change', async (event) => {
+        const file = event.target.files[0]
+        if (!file) return
+        const data = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result.split(',')[1])
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+        await api('/api/fs/upload', {
+          method: 'POST',
+          body: JSON.stringify({ path: pathString(), name: file.name, data }),
+        })
+        event.target.value = ''
+        await load()
+      })
+
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await fetch('/api/auth/logout', { method: 'POST' })
+        location.href = '/login.html'
+      })
+
+      ;(async function init() {
+        const user = await me()
+        if (!user) {
+          location.href = '/login.html'
+          return
+        }
+        document.getElementById('who').textContent = user.username
+        await load()
+      })()
+    </script>
   </body>
 </html>

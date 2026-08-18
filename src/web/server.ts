@@ -39,7 +39,11 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../../web')
 export async function buildServer(config: ServerConfig): Promise<FastifyInstance> {
   const db = openDatabase(config.dbPath)
 
-  const app = Fastify({ logger: { level: config.logLevel }, trustProxy: true })
+  const app = Fastify({
+    logger: { level: config.logLevel },
+    trustProxy: true,
+    bodyLimit: config.maxUploadBytes,
+  })
 
   app.decorate('db', db)
   app.decorate('config', config)
