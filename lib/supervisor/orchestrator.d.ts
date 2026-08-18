@@ -1,45 +1,65 @@
 /**
- * Per-user DSH supervisor: one main DSH per user, loopback port assignment,
- * status tracking, and tree teardown.
+ * Per-user DSH supervisor: a main + watchdog process pair, crash detection,
+ * auto-restart with backoff, diagnostics capture, and post-restart handoff.
  *
- * P3 implements single-DSH launch/stop/status. P5 adds the watchdog/repair pair
- * (crash diagnosis → session-log repair → resume) on top of this lifecycle.
+ * P5 implements the process-management half of the watchdog design: the
+ * orchestrator spawns both processes, detects a crash, and restarts the main
+ * with a bounded backoff while the watchdog (a headless DSH) carries out the
+ * agent-level repair/session-resume — the harness-internal half, deferred to
+ * real-harness integration (see docs/blueprint.md §4).
  * @module dsh-server-login/supervisor/orchestrator
  */
 import type { ServerConfig } from '../config.js';
 export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped';
-/** A tracked child DSH (main). */
+export type InstanceRole = 'main' | 'watchdog';
+/** A tracked child DSH (main or watchdog). */
 export interface Instance {
     id: string;
     userId: string;
+    role: InstanceRole;
     folder: string;
-    port: number;
+    port?: number;
     status: InstanceStatus;
     pid?: number;
     exitCode?: number;
+    lastError?: string;
+    patchPath?: string;
 }
 /** Thrown when a user already has a running main DSH. */
 export declare class AlreadyRunningError extends Error {
     constructor(userId: string);
 }
+/** A user's main + watchdog pair. */
+export interface UserStatus {
+    main?: Instance;
+    watchdog?: Instance;
+}
 /**
- * Owns the lifecycle of all per-user DSH processes. State is in-memory (a
- * running instance dies with the orchestrator); DB reconciliation is a P3+
- * follow-up.
+ * Owns the lifecycle of per-user DSH process pairs. State is in-memory.
  */
 export declare class Supervisor {
     private readonly config;
-    private readonly instances;
+    private readonly mains;
+    private readonly watchdogs;
     private readonly children;
+    private readonly restartTimers;
     constructor(config: ServerConfig);
-    /** Spawn a main DSH for `userId` rooted at the given workspace folder. */
+    /** Spawn the watchdog + main pair for a user (main must not already exist). */
     launch(userId: string, folder: string, patchPath?: string): Promise<Instance>;
-    /** Current instance for a user, if any. */
-    statusFor(userId: string): Instance | undefined;
-    /** Loopback port of the user's running instance, if any. */
+    /** Stop the current main (clean) and respawn it with the same folder/patch. */
+    restartMain(userId: string): Promise<Instance | undefined>;
+    /** Current main + watchdog for a user. */
+    status(userId: string): UserStatus;
+    /** Loopback port of the user's running main, if any. */
     portFor(userId: string): number | undefined;
-    /** Stop a user's instance with SIGTERM, escalating to SIGKILL after a grace. */
+    /** Stop both processes for a user (cancelling any pending restart). */
     stop(userId: string): void;
-    /** Stop every tracked instance on shutdown. */
+    /** Stop every tracked process on shutdown. */
     teardown(): void;
+    private handoffPath;
+    private baseEnv;
+    private spawnInstance;
+    private trackChild;
+    private scheduleRestart;
+    private killInstance;
 }

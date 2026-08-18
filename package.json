@@ -25,7 +25,8 @@
     "smoke:auth": "node scripts/smoke-auth.mjs",
     "smoke:fs": "node scripts/smoke-fs.mjs",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
-    "smoke:plugins": "node scripts/smoke-plugins.mjs"
+    "smoke:plugins": "node scripts/smoke-plugins.mjs",
+    "smoke:watchdog": "node scripts/smoke-watchdog.mjs"
   },
   "dsh": {
     "plugin": true,

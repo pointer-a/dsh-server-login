@@ -36,6 +36,8 @@ export interface ServerConfig {
   sessionTtlSeconds: number
   /** Max upload request body in bytes (base64 JSON; ~0.75× the file size). */
   maxUploadBytes: number
+  /** Delay before auto-restarting a crashed child DSH, in milliseconds. */
+  restartBackoffMs: number
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -50,6 +52,7 @@ export interface ConfigOverrides {
   secureCookies?: boolean
   sessionTtlSeconds?: number | string
   maxUploadBytes?: number | string
+  restartBackoffMs?: number | string
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -58,6 +61,7 @@ const DEFAULT_DSH_COMMAND = ['dsh']
 const DEFAULT_LOG_LEVEL = 'info'
 const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 const DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+const DEFAULT_RESTART_BACKOFF_MS = 1000
 
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
@@ -105,6 +109,9 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     ),
     maxUploadBytes: Number(
       overrides.maxUploadBytes ?? process.env.DSH_SERVER_LOGIN_MAX_UPLOAD ?? DEFAULT_MAX_UPLOAD_BYTES,
+    ),
+    restartBackoffMs: Number(
+      overrides.restartBackoffMs ?? process.env.DSH_SERVER_LOGIN_RESTART_BACKOFF ?? DEFAULT_RESTART_BACKOFF_MS,
     ),
   }
 }

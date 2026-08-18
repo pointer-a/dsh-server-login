@@ -1,9 +1,12 @@
 /**
- * Per-user DSH supervisor: one main DSH per user, loopback port assignment,
- * status tracking, and tree teardown.
+ * Per-user DSH supervisor: a main + watchdog process pair, crash detection,
+ * auto-restart with backoff, diagnostics capture, and post-restart handoff.
  *
- * P3 implements single-DSH launch/stop/status. P5 adds the watchdog/repair pair
- * (crash diagnosis → session-log repair → resume) on top of this lifecycle.
+ * P5 implements the process-management half of the watchdog design: the
+ * orchestrator spawns both processes, detects a crash, and restarts the main
+ * with a bounded backoff while the watchdog (a headless DSH) carries out the
+ * agent-level repair/session-resume — the harness-internal half, deferred to
+ * real-harness integration (see docs/blueprint.md §4).
  * @module dsh-server-login/supervisor/orchestrator
  */
 
@@ -14,16 +17,20 @@ import type { ServerConfig } from '../config.js'
 import { findFreePort, scrubEnv } from './spawn.js'
 
 export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped'
+export type InstanceRole = 'main' | 'watchdog'
 
-/** A tracked child DSH (main). */
+/** A tracked child DSH (main or watchdog). */
 export interface Instance {
   id: string
   userId: string
+  role: InstanceRole
   folder: string
-  port: number
+  port?: number
   status: InstanceStatus
   pid?: number
   exitCode?: number
+  lastError?: string
+  patchPath?: string
 }
 
 /** Thrown when a user already has a running main DSH. */
@@ -34,97 +41,157 @@ export class AlreadyRunningError extends Error {
   }
 }
 
+/** A user's main + watchdog pair. */
+export interface UserStatus {
+  main?: Instance
+  watchdog?: Instance
+}
+
 /**
- * Owns the lifecycle of all per-user DSH processes. State is in-memory (a
- * running instance dies with the orchestrator); DB reconciliation is a P3+
- * follow-up.
+ * Owns the lifecycle of per-user DSH process pairs. State is in-memory.
  */
 export class Supervisor {
-  private readonly instances = new Map<string, Instance>()
+  private readonly mains = new Map<string, Instance>()
+  private readonly watchdogs = new Map<string, Instance>()
   private readonly children = new Map<string, ChildProcess>()
+  private readonly restartTimers = new Map<string, NodeJS.Timeout>()
 
   constructor(private readonly config: ServerConfig) {}
 
-  /** Spawn a main DSH for `userId` rooted at the given workspace folder. */
+  /** Spawn the watchdog + main pair for a user (main must not already exist). */
   async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
-    if (this.instances.has(userId)) throw new AlreadyRunningError(userId)
+    if (this.mains.has(userId)) throw new AlreadyRunningError(userId)
+    await this.spawnInstance(userId, 'watchdog', folder)
+    return await this.spawnInstance(userId, 'main', folder, patchPath)
+  }
 
-    const port = await findFreePort()
-    const homeDir = join(this.config.dataRoot, 'users', userId, 'home')
-    const apiKey = process.env.DEEPSEEK_API_KEY ?? ''
-    const [command = 'dsh', ...args] = this.config.dshCommand
+  /** Stop the current main (clean) and respawn it with the same folder/patch. */
+  async restartMain(userId: string): Promise<Instance | undefined> {
+    const current = this.mains.get(userId)
+    if (current === undefined) return undefined
+    this.killInstance(userId, current)
+    return await this.spawnInstance(userId, 'main', current.folder, current.patchPath)
+  }
 
-    const launchArgs = ['--profile', 'web', '--cwd', folder]
-    if (patchPath !== undefined) launchArgs.push('--patch', patchPath)
-    const child = spawn(command, [...args, ...launchArgs], {
-      cwd: folder,
-      env: {
-        ...scrubEnv(process.env),
-        DSH_HOME: homeDir,
-        DEEPSEEK_API_KEY: apiKey,
-        DSH_SERVER_LOGIN_PORT: String(port),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+  /** Current main + watchdog for a user. */
+  status(userId: string): UserStatus {
+    return { main: this.mains.get(userId), watchdog: this.watchdogs.get(userId) }
+  }
 
+  /** Loopback port of the user's running main, if any. */
+  portFor(userId: string): number | undefined {
+    return this.mains.get(userId)?.port
+  }
+
+  /** Stop both processes for a user (cancelling any pending restart). */
+  stop(userId: string): void {
+    const timer = this.restartTimers.get(userId)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      this.restartTimers.delete(userId)
+    }
+    const main = this.mains.get(userId)
+    const watchdog = this.watchdogs.get(userId)
+    if (main !== undefined) this.killInstance(userId, main)
+    if (watchdog !== undefined) this.killInstance(userId, watchdog)
+    this.mains.delete(userId)
+    this.watchdogs.delete(userId)
+  }
+
+  /** Stop every tracked process on shutdown. */
+  teardown(): void {
+    for (const userId of [...this.mains.keys(), ...this.watchdogs.keys()]) this.stop(userId)
+  }
+
+  private handoffPath(userId: string): string {
+    return join(this.config.dataRoot, 'users', userId, 'handoff.json')
+  }
+
+  private baseEnv(userId: string): Record<string, string> {
+    return {
+      ...scrubEnv(process.env),
+      DSH_HOME: join(this.config.dataRoot, 'users', userId, 'home'),
+      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? '',
+    }
+  }
+
+  private async spawnInstance(userId: string, role: InstanceRole, folder: string, patchPath?: string): Promise<Instance> {
+    const port = role === 'main' ? await findFreePort() : undefined
     const instance: Instance = {
       id: randomUUID(),
       userId,
+      role,
       folder,
       port,
       status: 'starting',
-      pid: child.pid ?? undefined,
+      patchPath,
     }
-    this.instances.set(userId, instance)
-    this.children.set(userId, child)
+    const map = role === 'main' ? this.mains : this.watchdogs
+    map.set(userId, instance)
 
-    child.on('spawn', () => {
-      instance.status = 'running'
-    })
-    child.on('error', () => {
-      instance.status = 'crashed'
-      this.instances.delete(userId)
-      this.children.delete(userId)
-    })
-    child.on('exit', (code) => {
-      if (instance.status !== 'stopped') instance.status = 'crashed'
-      instance.exitCode = code ?? undefined
-      this.instances.delete(userId)
-      this.children.delete(userId)
-    })
-    child.stdout?.pipe(process.stdout)
-    child.stderr?.pipe(process.stderr)
+    const [command = 'dsh', ...args] = this.config.dshCommand
+    const launchArgs = ['--profile', role === 'main' ? 'web' : 'headless', '--cwd', folder]
+    if (role === 'main' && patchPath !== undefined) launchArgs.push('--patch', patchPath)
 
+    const env: Record<string, string> = { ...this.baseEnv(userId), DSH_SERVER_LOGIN_ROLE: role }
+    if (role === 'main') env.DSH_SERVER_LOGIN_PORT = String(port)
+    if (role === 'watchdog') env.DSH_SERVER_LOGIN_HANDOFF_PATH = this.handoffPath(userId)
+
+    const child = spawn(command, [...args, ...launchArgs], { cwd: folder, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    this.trackChild(userId, instance, child)
     return instance
   }
 
-  /** Current instance for a user, if any. */
-  statusFor(userId: string): Instance | undefined {
-    return this.instances.get(userId)
+  private trackChild(userId: string, instance: Instance, child: ChildProcess): void {
+    this.children.set(instance.id, child)
+    child.on('spawn', () => {
+      instance.status = 'running'
+      instance.pid = child.pid ?? undefined
+    })
+    child.stdout?.pipe(process.stdout)
+    let stderrTail = ''
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-2048)
+    })
+    child.on('error', (err) => {
+      instance.status = 'crashed'
+      instance.lastError = err.message
+      this.children.delete(instance.id)
+    })
+    child.on('exit', (code) => {
+      instance.exitCode = code ?? undefined
+      this.children.delete(instance.id)
+      const map = instance.role === 'main' ? this.mains : this.watchdogs
+      // Only act if this instance is still the current one (avoid a stale
+      // exit handler touching a freshly restarted instance).
+      if (map.get(userId)?.id !== instance.id) return
+      if (instance.status === 'stopped') {
+        map.delete(userId)
+      } else {
+        instance.status = 'crashed'
+        instance.lastError = stderrTail.slice(-500) || undefined
+        this.scheduleRestart(userId, instance)
+      }
+    })
   }
 
-  /** Loopback port of the user's running instance, if any. */
-  portFor(userId: string): number | undefined {
-    return this.instances.get(userId)?.port
+  private scheduleRestart(userId: string, instance: Instance): void {
+    const timer = setTimeout(() => {
+      this.restartTimers.delete(userId)
+      void this.spawnInstance(userId, instance.role, instance.folder, instance.patchPath)
+    }, this.config.restartBackoffMs)
+    timer.unref()
+    this.restartTimers.set(userId, timer)
   }
 
-  /** Stop a user's instance with SIGTERM, escalating to SIGKILL after a grace. */
-  stop(userId: string): void {
-    const child = this.children.get(userId)
-    const instance = this.instances.get(userId)
-    if (instance !== undefined) instance.status = 'stopped'
-    this.instances.delete(userId)
-    this.children.delete(userId)
+  private killInstance(userId: string, instance: Instance): void {
+    instance.status = 'stopped'
+    const child = this.children.get(instance.id)
     if (child === undefined) return
     child.kill('SIGTERM')
-    const timer = setTimeout(() => {
+    const killer = setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
     }, 5000)
-    timer.unref()
-  }
-
-  /** Stop every tracked instance on shutdown. */
-  teardown(): void {
-    for (const userId of [...this.instances.keys()]) this.stop(userId)
+    killer.unref()
   }
 }

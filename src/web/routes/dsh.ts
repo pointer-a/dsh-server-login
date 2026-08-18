@@ -1,14 +1,14 @@
 /**
- * DSH launch / supervise routes + the reverse proxy to a running instance.
- * Launch resolves the requested folder against the caller's workspace, reads
- * the folder's enabled plugins, writes a cordis patch for them, and spawns one
- * main DSH; stop/status drive the supervisor.
+ * DSH launch / supervise / restart routes + the reverse proxy to a running
+ * instance. Launch resolves the requested folder, reads its enabled plugins,
+ * writes a cordis patch, and spawns a main+watchdog pair; restart writes a
+ * post-restart command handoff and respawns the main.
  * @module dsh-server-login/web/routes/dsh
  */
 
 import type { FastifyPluginAsync } from 'fastify'
 import { mkdirSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
 import { resolveWithinRoot } from '../middleware/fs-guard.js'
 import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
@@ -25,6 +25,19 @@ const launchSchema = {
     properties: { folder: { type: 'string', maxLength: 512 } },
   },
 } as const
+
+const restartSchema = {
+  body: {
+    type: 'object',
+    required: ['command'],
+    additionalProperties: false,
+    properties: { command: { type: 'string', maxLength: 1024 } },
+  },
+} as const
+
+function alive(status: string | undefined): boolean {
+  return status !== undefined && status !== 'crashed' && status !== 'stopped'
+}
 
 export const dshRoutes: FastifyPluginAsync = async (app) => {
   app.post('/api/dsh/launch', { preHandler: requireAuth, schema: launchSchema }, async (request, reply) => {
@@ -44,7 +57,6 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'not_found' })
     }
 
-    // Per-folder plugin selection → cordis patch.
     let patchPath: string | undefined
     const workspace = findWorkspaceByPath(app.db, user.id, folder)
     if (workspace !== undefined) {
@@ -69,17 +81,33 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
     }
   })
 
+  app.post('/api/dsh/restart', { preHandler: requireAuth, schema: restartSchema }, async (request, reply) => {
+    const { command } = request.body as { command: string }
+    const user = request.user!
+    const handoffPath = join(app.config.dataRoot, 'users', user.id, 'handoff.json')
+    mkdirSync(dirname(handoffPath), { recursive: true })
+    writeFileSync(handoffPath, JSON.stringify({ command, createdAt: Date.now() }))
+    const instance = await app.supervisor.restartMain(user.id)
+    if (instance === undefined) return reply.code(404).send({ error: 'not_running' })
+    return {
+      instance: { id: instance.id, port: instance.port, status: instance.status },
+      url: `/u/${user.id}/dsh/`,
+    }
+  })
+
   app.post('/api/dsh/stop', { preHandler: requireAuth }, async (request) => {
     app.supervisor.stop(request.user!.id)
     return { ok: true }
   })
 
   app.get('/api/dsh/status', { preHandler: requireAuth }, async (request) => {
-    const instance = app.supervisor.statusFor(request.user!.id)
-    if (instance === undefined) return { running: false }
+    const { main, watchdog } = app.supervisor.status(request.user!.id)
     return {
-      running: true,
-      instance: { id: instance.id, port: instance.port, status: instance.status, folder: instance.folder },
+      running: alive(main?.status),
+      instance: main
+        ? { id: main.id, port: main.port, status: main.status, exitCode: main.exitCode, lastError: main.lastError }
+        : null,
+      watchdog: watchdog ? { id: watchdog.id, status: watchdog.status, exitCode: watchdog.exitCode } : null,
     }
   })
 

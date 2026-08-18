@@ -1,8 +1,8 @@
 /**
- * DSH launch / supervise routes + the reverse proxy to a running instance.
- * Launch resolves the requested folder against the caller's workspace, reads
- * the folder's enabled plugins, writes a cordis patch for them, and spawns one
- * main DSH; stop/status drive the supervisor.
+ * DSH launch / supervise / restart routes + the reverse proxy to a running
+ * instance. Launch resolves the requested folder, reads its enabled plugins,
+ * writes a cordis patch, and spawns a main+watchdog pair; restart writes a
+ * post-restart command handoff and respawns the main.
  * @module dsh-server-login/web/routes/dsh
  */
 import type { FastifyPluginAsync } from 'fastify';

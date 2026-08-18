@@ -31,6 +31,8 @@ export interface ServerConfig {
     sessionTtlSeconds: number;
     /** Max upload request body in bytes (base64 JSON; ~0.75× the file size). */
     maxUploadBytes: number;
+    /** Delay before auto-restarting a crashed child DSH, in milliseconds. */
+    restartBackoffMs: number;
 }
 /** Untyped overrides collected from argv / env. */
 export interface ConfigOverrides {
@@ -44,6 +46,7 @@ export interface ConfigOverrides {
     secureCookies?: boolean;
     sessionTtlSeconds?: number | string;
     maxUploadBytes?: number | string;
+    restartBackoffMs?: number | string;
 }
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to
