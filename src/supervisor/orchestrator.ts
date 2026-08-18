@@ -46,7 +46,7 @@ export class Supervisor {
   constructor(private readonly config: ServerConfig) {}
 
   /** Spawn a main DSH for `userId` rooted at the given workspace folder. */
-  async launch(userId: string, folder: string): Promise<Instance> {
+  async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
     if (this.instances.has(userId)) throw new AlreadyRunningError(userId)
 
     const port = await findFreePort()
@@ -54,7 +54,9 @@ export class Supervisor {
     const apiKey = process.env.DEEPSEEK_API_KEY ?? ''
     const [command = 'dsh', ...args] = this.config.dshCommand
 
-    const child = spawn(command, [...args, '--profile', 'web', '--cwd', folder], {
+    const launchArgs = ['--profile', 'web', '--cwd', folder]
+    if (patchPath !== undefined) launchArgs.push('--patch', patchPath)
+    const child = spawn(command, [...args, ...launchArgs], {
       cwd: folder,
       env: {
         ...scrubEnv(process.env),

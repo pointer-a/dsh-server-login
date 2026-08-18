@@ -33,7 +33,7 @@ export declare class Supervisor {
     private readonly children;
     constructor(config: ServerConfig);
     /** Spawn a main DSH for `userId` rooted at the given workspace folder. */
-    launch(userId: string, folder: string): Promise<Instance>;
+    launch(userId: string, folder: string, patchPath?: string): Promise<Instance>;
     /** Current instance for a user, if any. */
     statusFor(userId: string): Instance | undefined;
     /** Loopback port of the user's running instance, if any. */

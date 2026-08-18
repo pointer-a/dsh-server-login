@@ -1,16 +1,20 @@
 /**
  * DSH launch / supervise routes + the reverse proxy to a running instance.
- * Launch resolves the requested folder against the caller's workspace and
- * spawns one main DSH; stop/status drive the supervisor.
+ * Launch resolves the requested folder against the caller's workspace, reads
+ * the folder's enabled plugins, writes a cordis patch for them, and spawns one
+ * main DSH; stop/status drive the supervisor.
  * @module dsh-server-login/web/routes/dsh
  */
 
 import type { FastifyPluginAsync } from 'fastify'
-import { statSync } from 'node:fs'
+import { mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
 import { resolveWithinRoot } from '../middleware/fs-guard.js'
 import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
+import { findWorkspaceByPath, getEnabledPluginIds } from '../../db/repo.js'
 import { AlreadyRunningError } from '../../supervisor/orchestrator.js'
+import { renderPatch } from '../../supervisor/patch.js'
 import { registerDshProxy } from '../../supervisor/proxy.js'
 
 const launchSchema = {
@@ -40,8 +44,21 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'not_found' })
     }
 
+    // Per-folder plugin selection → cordis patch.
+    let patchPath: string | undefined
+    const workspace = findWorkspaceByPath(app.db, user.id, folder)
+    if (workspace !== undefined) {
+      const enabled = getEnabledPluginIds(app.db, workspace.id)
+      if (enabled.length > 0) {
+        const patchesDir = join(app.config.dataRoot, 'users', user.id, 'patches')
+        mkdirSync(patchesDir, { recursive: true })
+        patchPath = join(patchesDir, `${workspace.id}.yml`)
+        writeFileSync(patchPath, renderPatch(enabled))
+      }
+    }
+
     try {
-      const instance = await app.supervisor.launch(user.id, folderAbs)
+      const instance = await app.supervisor.launch(user.id, folderAbs, patchPath)
       return {
         instance: { id: instance.id, port: instance.port, status: instance.status },
         url: `/u/${user.id}/dsh/`,

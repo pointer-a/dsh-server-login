@@ -73,7 +73,7 @@ spawn(dshBinPath, ['--profile', 'web', '--patch', mainPatchPath, '--cwd', worksp
 | Admin | `GET /api/admin/users`、`POST /api/admin/users/:id/approve\|disable` | 已实现（P1） |
 | Desktop/FS | `GET /api/desktop/tree`、`POST /api/fs/mkdir\|upload` | 已实现（P2） |
 | DSH | `POST /api/dsh/launch\|stop`、`GET /api/dsh/status`、`GET /u/:slug/dsh/*` | 已实现（P3，HTTP 代理） |
-| Plugin | `GET /api/plugins`、`POST /api/plugins/select` | stub |
+| Plugin | `GET /api/plugins`、`POST /api/plugins/select` | 已实现（P4） |
 | Domain/nginx | `GET/PUT /api/domain`、`POST /api/nginx/regen` | stub |
 | 静态 | `GET /*`（占位 SPA） | 已接 |
 

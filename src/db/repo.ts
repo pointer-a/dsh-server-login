@@ -6,6 +6,7 @@
  * @module dsh-server-login/db/repo
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Database } from './connection.js'
 
 export type UserRole = 'admin' | 'pending' | 'active' | 'disabled'
@@ -162,4 +163,73 @@ export function audit(db: Database, actor: string | null, action: string, detail
     action,
     detail ?? null,
   )
+}
+
+/** A per-user project folder (workspace) row. */
+export interface Workspace {
+  id: string
+  userId: string
+  name: string
+  relPath: string
+  createdAt: number
+}
+
+function toWorkspace(row: Record<string, unknown>): Workspace {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    name: row.name as string,
+    relPath: row.rel_path as string,
+    createdAt: row.created_at as number,
+  }
+}
+
+export function findWorkspaceByPath(db: Database, userId: string, relPath: string): Workspace | undefined {
+  const row = db
+    .prepare('SELECT id, user_id, name, rel_path, created_at FROM workspaces WHERE user_id = ? AND rel_path = ?')
+    .get(userId, relPath)
+  return row ? toWorkspace(row as Record<string, unknown>) : undefined
+}
+
+/** Upsert a workspace row by (user, relPath); create with a derived name. */
+export function getOrCreateWorkspace(db: Database, userId: string, relPath: string): Workspace {
+  const existing = findWorkspaceByPath(db, userId, relPath)
+  if (existing !== undefined) return existing
+  const id = randomUUID()
+  const segments = relPath.split('/').filter(Boolean)
+  const name = segments.at(-1) ?? 'root'
+  db.prepare('INSERT INTO workspaces (id, user_id, name, rel_path, created_at) VALUES (?, ?, ?, ?, ?)').run(
+    id,
+    userId,
+    name,
+    relPath,
+    Date.now(),
+  )
+  return { id, userId, name, relPath, createdAt: Date.now() }
+}
+
+/** Replace a workspace's plugin selection (insert/delete in one transaction). */
+export function setFolderPlugins(
+  db: Database,
+  workspaceId: string,
+  selections: ReadonlyArray<{ id: string; enabled: boolean }>,
+): void {
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM folder_plugins WHERE workspace_id = ?').run(workspaceId)
+    const insert = db.prepare(
+      'INSERT INTO folder_plugins (workspace_id, plugin_id, enabled, updated_at) VALUES (?, ?, ?, ?)',
+    )
+    for (const selection of selections) {
+      insert.run(workspaceId, selection.id, selection.enabled ? 1 : 0, Date.now())
+    }
+  })
+  tx()
+}
+
+/** Enabled plugin ids for a workspace. */
+export function getEnabledPluginIds(db: Database, workspaceId: string): string[] {
+  const rows = db
+    .prepare('SELECT plugin_id FROM folder_plugins WHERE workspace_id = ? AND enabled = 1')
+    .all(workspaceId) as Array<{ plugin_id: string }>
+  return rows.map((row) => row.plugin_id)
 }

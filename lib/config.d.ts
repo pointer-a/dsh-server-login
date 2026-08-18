@@ -3,6 +3,12 @@
  * (or read from env), never a hardcoded constant inside the app.
  * @module dsh-server-login/config
  */
+/** A plugin available for per-folder enablement (`id` = package name). */
+export interface PluginInfo {
+    id: string;
+    name: string;
+    description: string;
+}
 /** Resolved, immutable runtime configuration. */
 export interface ServerConfig {
     /** Bind host for the orchestrator HTTP server. */
@@ -15,6 +21,8 @@ export interface ServerConfig {
     dataRoot: string;
     /** Argv used to launch a child DSH; first element is the executable. */
     dshCommand: string[];
+    /** Catalog of plugins users may enable per folder. */
+    availablePlugins: PluginInfo[];
     /** Pino log level. */
     logLevel: string;
     /** Set the `Secure` flag on session cookies (enable behind HTTPS). */
@@ -31,6 +39,7 @@ export interface ConfigOverrides {
     dbPath?: string;
     dataRoot?: string;
     dshCommand?: string[];
+    availablePlugins?: PluginInfo[];
     logLevel?: string;
     secureCookies?: boolean;
     sessionTtlSeconds?: number | string;

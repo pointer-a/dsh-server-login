@@ -7,6 +7,13 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+/** A plugin available for per-folder enablement (`id` = package name). */
+export interface PluginInfo {
+  id: string
+  name: string
+  description: string
+}
+
 /** Resolved, immutable runtime configuration. */
 export interface ServerConfig {
   /** Bind host for the orchestrator HTTP server. */
@@ -19,6 +26,8 @@ export interface ServerConfig {
   dataRoot: string
   /** Argv used to launch a child DSH; first element is the executable. */
   dshCommand: string[]
+  /** Catalog of plugins users may enable per folder. */
+  availablePlugins: PluginInfo[]
   /** Pino log level. */
   logLevel: string
   /** Set the `Secure` flag on session cookies (enable behind HTTPS). */
@@ -36,6 +45,7 @@ export interface ConfigOverrides {
   dbPath?: string
   dataRoot?: string
   dshCommand?: string[]
+  availablePlugins?: PluginInfo[]
   logLevel?: string
   secureCookies?: boolean
   sessionTtlSeconds?: number | string
@@ -54,6 +64,22 @@ function toBool(value: string | undefined, fallback: boolean): boolean {
   return value === 'true' || value === '1'
 }
 
+function parsePluginCatalog(json: string | undefined): PluginInfo[] {
+  if (json === undefined) return []
+  try {
+    const parsed: unknown = JSON.parse(json)
+    if (!Array.isArray(parsed)) return []
+    return parsed.flatMap((entry): PluginInfo[] => {
+      if (typeof entry !== 'object' || entry === null) return []
+      const { id, name, description } = entry as Record<string, unknown>
+      if (typeof id !== 'string' || typeof name !== 'string') return []
+      return [{ id, name, description: typeof description === 'string' ? description : '' }]
+    })
+  } catch {
+    return []
+  }
+}
+
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to
  * `~/.dsh-server-login` (always writable for dev); production sets
@@ -70,6 +96,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     dbPath: overrides.dbPath ?? join(dataRoot, 'server-login.db'),
     dataRoot,
     dshCommand: overrides.dshCommand ?? (dshBin !== undefined ? [dshBin] : DEFAULT_DSH_COMMAND),
+    availablePlugins: overrides.availablePlugins ?? parsePluginCatalog(process.env.DSH_SERVER_LOGIN_PLUGINS),
     logLevel: overrides.logLevel ?? DEFAULT_LOG_LEVEL,
     secureCookies:
       overrides.secureCookies ?? toBool(process.env.DSH_SERVER_LOGIN_SECURE_COOKIES, false),

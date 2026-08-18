@@ -61,3 +61,21 @@ export declare function deleteSession(db: Database, tokenHash: string): void;
 export declare function deleteUserSessions(db: Database, userId: string): void;
 /** Append an audit entry. `actor` is a user id or `'system'`. */
 export declare function audit(db: Database, actor: string | null, action: string, detail?: string | null): void;
+/** A per-user project folder (workspace) row. */
+export interface Workspace {
+    id: string;
+    userId: string;
+    name: string;
+    relPath: string;
+    createdAt: number;
+}
+export declare function findWorkspaceByPath(db: Database, userId: string, relPath: string): Workspace | undefined;
+/** Upsert a workspace row by (user, relPath); create with a derived name. */
+export declare function getOrCreateWorkspace(db: Database, userId: string, relPath: string): Workspace;
+/** Replace a workspace's plugin selection (insert/delete in one transaction). */
+export declare function setFolderPlugins(db: Database, workspaceId: string, selections: ReadonlyArray<{
+    id: string;
+    enabled: boolean;
+}>): void;
+/** Enabled plugin ids for a workspace. */
+export declare function getEnabledPluginIds(db: Database, workspaceId: string): string[];

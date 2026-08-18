@@ -34,11 +34,18 @@
       <button id="stopBtn" class="hidden">停止 DSH</button>
       <span id="dshStatus">未运行</span>
       <a id="dshLink" class="hidden" target="_blank" rel="noopener">打开 DSH</a>
+      <button id="managePluginsBtn">管理插件</button>
     </div>
     <table>
       <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
+
+    <div id="pluginPanel" class="hidden" style="margin:1rem 0; padding:1rem; border:1px solid #8884;">
+      <h3>当前文件夹的插件</h3>
+      <div id="pluginList"></div>
+      <button id="savePluginsBtn" style="margin-top:0.75rem;">保存插件选择</button>
+    </div>
 
     <script>
       let currentPath = [] // array of path segments; [] = root
@@ -188,6 +195,40 @@
       document.getElementById('stopBtn').addEventListener('click', async () => {
         await fetch('/api/dsh/stop', { method: 'POST' })
         await refreshDsh()
+      })
+
+      let pluginCatalog = []
+      async function loadPlugins() {
+        const folder = pathString()
+        const res = await fetch('/api/plugins' + (folder ? `?folder=${encodeURIComponent(folder)}` : ''))
+        if (!res.ok) return
+        const { plugins } = await res.json()
+        pluginCatalog = plugins
+        const list = document.getElementById('pluginList')
+        list.innerHTML = plugins.length === 0 ? '<p>暂无可用插件</p>' : ''
+        for (const plugin of plugins) {
+          const label = document.createElement('label')
+          label.style.display = 'block'
+          label.innerHTML = `<input type="checkbox" data-id="${plugin.id}" ${plugin.enabled ? 'checked' : ''}/> <strong>${plugin.name}</strong> — ${plugin.description || ''}`
+          list.appendChild(label)
+        }
+      }
+      document.getElementById('managePluginsBtn').addEventListener('click', async () => {
+        const panel = document.getElementById('pluginPanel')
+        panel.classList.toggle('hidden')
+        if (!panel.classList.contains('hidden')) await loadPlugins()
+      })
+      document.getElementById('savePluginsBtn').addEventListener('click', async () => {
+        const plugins = pluginCatalog.map((plugin) => ({
+          id: plugin.id,
+          enabled: document.querySelector(`input[data-id="${plugin.id}"]`).checked,
+        }))
+        const res = await fetch('/api/plugins/select', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ folder: pathString(), plugins }),
+        })
+        if (res.ok) alert('已保存')
       })
 
       ;(async function init() {
