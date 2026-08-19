@@ -118,22 +118,27 @@ Type=oneshot
 ExecStart=/usr/local/bin/provision-new-users.sh
 ```
 
-`/usr/local/bin/provision-new-users.sh`（核心：遍历所有用户目录，已建账号的跳过，没建的建）：
+`/usr/local/bin/provision-new-users.sh`（核心：遍历所有用户目录，没建账号的先建，然后**每次都 chown**）：
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 for dir in /var/lib/dsh-server-login/users/*/; do
+  [ -d "$dir" ] || continue
   id="$(basename "$dir")"
   user="dsh-$id"
-  # 已有账号就跳过（幂等）
-  if id "$user" &>/dev/null; then continue; fi
-  uid="$(dsh-server-login uid-for-user "$id")"
-  useradd -u "$uid" -M -s /usr/sbin/nologin "$user"
-  chown -R "$uid:$uid" "$dir"
+  if ! id "$user" &>/dev/null; then
+    # 账号不存在才建（uid 用插件算出来的同一个值，保证两边一致）
+    uid="$(dsh-server-login uid-for-user "$id")"
+    useradd -u "$uid" -M -s /usr/sbin/nologin "$user"
+  fi
+  uid="$(id -u "$user")"          # 账号已存在就复用它的 uid
+  chown -R "$uid:$uid" "$dir"     # 每次都 chown（幂等，把漏掉的属主补上）
   echo "provisioned $id -> uid $uid"
 done
 ```
+
+> ⚠️ **别写「账号已存在就跳过」**：那样会连 chown 一起跳过——如果某用户的目录后来变成 root 所有，重跑也不会修，他的 DSH 还是会因为读不了自己 home 而崩（外网 502）。所以 chown 要放在判断**外面**、每次都执行。
 
 启用：
 
