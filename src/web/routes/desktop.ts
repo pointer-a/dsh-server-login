@@ -103,4 +103,46 @@ export const desktopRoutes: FastifyPluginAsync = async (app) => {
     }
     return { ok: true, name: filename }
   })
+
+  const createSchema = {
+    body: {
+      type: 'object',
+      required: ['path', 'name', 'type'],
+      additionalProperties: false,
+      properties: {
+        path: { type: 'string', maxLength: 512 },
+        name: { type: 'string', maxLength: 255 },
+        type: { type: 'string', enum: ['file', 'dir'] },
+      },
+    },
+  } as const
+
+  app.post('/api/fs/create', { preHandler: requireAuth, schema: createSchema }, async (request, reply) => {
+    const { path, name, type } = request.body as { path: string; name: string; type: 'file' | 'dir' }
+    const root = workspaceRoot(app.config, request.user!.id)
+    ensureWorkspaceRoot(root)
+    let dirAbs: string
+    try {
+      dirAbs = resolveWithinRoot(root, path)
+    } catch {
+      return reply.code(400).send({ error: 'bad_path' })
+    }
+    let filename: string
+    try {
+      filename = safeFilename(name)
+    } catch {
+      return reply.code(400).send({ error: 'bad_name' })
+    }
+    const target = join(dirAbs, filename)
+    try {
+      if (type === 'dir') await mkdir(target)
+      else await writeFile(target, '')
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'EEXIST') return reply.code(409).send({ error: 'exists' })
+      if (code === 'ENOENT') return reply.code(404).send({ error: 'parent_missing' })
+      throw err
+    }
+    return { ok: true, name: filename, type }
+  })
 }
