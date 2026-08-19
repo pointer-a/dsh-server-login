@@ -58,6 +58,64 @@
       </div>
     </div>
 
+    <!-- ============ 窗口：DSH ============ -->
+    <div class="window" id="win-dsh">
+      <div class="window-title">
+        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>DSH</div>
+        <div class="controls"><button class="close" onclick="closeWindow('dsh')">✕</button></div>
+      </div>
+      <div class="window-body">
+        <div class="stat" id="dshState"><span class="dot off"></span> 未运行</div>
+        <div class="row-actions">
+          <button class="btn primary" id="launchBtn">启动 DSH</button>
+          <button class="btn ghost hidden" id="stopBtn">停止</button>
+          <button class="btn ghost hidden" id="openDshBtn">打开 DSH ↗</button>
+          <button class="btn ghost" id="managePluginsBtn">管理插件</button>
+        </div>
+        <div class="section-label">在此文件夹启动：<span id="dshFolder">根目录</span></div>
+        <div class="hidden" id="pluginPanel">
+          <div class="section-label">当前文件夹插件</div>
+          <div id="pluginList"></div>
+          <button class="btn primary small" id="savePluginsBtn" style="margin-top:10px">保存插件选择</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 窗口：我的文件 ============ -->
+    <div class="window" id="win-files">
+      <div class="window-title">
+        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>我的文件</div>
+        <div class="controls"><button class="close" onclick="closeWindow('files')">✕</button></div>
+      </div>
+      <div class="window-body">
+        <div class="pathbar">
+          <button class="btn ghost small" id="newFolderBtn">新建文件夹</button>
+          <button class="btn ghost small" id="uploadBtn">上传文件</button>
+          <input id="fileInput" type="file" class="hidden" />
+          <span class="crumbs" id="breadcrumb"></span>
+        </div>
+        <table class="files">
+          <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ 窗口：管理台 ============ -->
+    <div class="window" id="win-admin">
+      <div class="window-title">
+        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/></svg>管理台</div>
+        <div class="controls"><button class="close" onclick="closeWindow('admin')">✕</button></div>
+      </div>
+      <div class="window-body">
+        <div class="section-label">用户审核与管理</div>
+        <table class="admin" id="adminUsers">
+          <thead><tr><th>用户名</th><th>角色</th><th>注册时间</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <script>
       // ---------- session ----------
       let user = null
@@ -71,6 +129,7 @@
       const zTop = { n: 10 }
       function openWindow(id) {
         const win = document.getElementById('win-' + id)
+        if (!win) return
         if (win.classList.contains('hidden')) {
           win.classList.remove('hidden')
           positionWindow(win)
@@ -78,7 +137,8 @@
         focusWindow(win)
       }
       function closeWindow(id) {
-        document.getElementById('win-' + id).classList.add('hidden')
+        const win = document.getElementById('win-' + id)
+        if (win) win.classList.add('hidden')
       }
       function focusWindow(win) {
         document.querySelectorAll('.window').forEach((w) => w.classList.remove('focused'))
@@ -131,7 +191,8 @@
       }
       async function navigate(path) {
         currentPath = path ? path.split('/').filter(Boolean) : []
-        document.getElementById('dshFolder').textContent = pathString() || '根目录'
+        const folderEl = document.getElementById('dshFolder')
+        if (folderEl) folderEl.textContent = pathString() || '根目录'
         await load()
       }
       async function load() {
@@ -181,9 +242,8 @@
         if (!res.ok) return
         const body = await res.json()
         const running = body.running
-        document.getElementById('dshState').textContent = running ? '运行中' : '未运行'
-        document.getElementById('dshState').innerHTML =
-          `<span class="dot ${running ? 'on' : 'off'}"></span> ${running ? '运行中' : '未运行'}`
+        const state = document.getElementById('dshState')
+        state.innerHTML = `<span class="dot ${running ? 'on' : 'off'}"></span> ${running ? '运行中' : '未运行'}`
         document.getElementById('stopBtn').classList.toggle('hidden', !running)
         document.getElementById('openDshBtn').classList.toggle('hidden', !running)
         if (running) document.getElementById('openDshBtn').onclick = () => window.open(body.url, '_blank')
@@ -272,63 +332,5 @@
         await refreshDsh()
       })()
     </script>
-
-    <!-- ============ 窗口：DSH ============ -->
-    <div class="window" id="win-dsh">
-      <div class="window-title">
-        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>DSH</div>
-        <div class="controls"><button class="close" onclick="closeWindow('dsh')">✕</button></div>
-      </div>
-      <div class="window-body">
-        <div class="stat" id="dshState"><span class="dot off"></span> 未运行</div>
-        <div class="row-actions">
-          <button class="btn primary" id="launchBtn">启动 DSH</button>
-          <button class="btn ghost hidden" id="stopBtn">停止</button>
-          <button class="btn ghost hidden" id="openDshBtn">打开 DSH ↗</button>
-          <button class="btn ghost" id="managePluginsBtn">管理插件</button>
-        </div>
-        <div class="section-label">在此文件夹启动：<span id="dshFolder">根目录</span></div>
-        <div class="hidden" id="pluginPanel">
-          <div class="section-label">当前文件夹插件</div>
-          <div id="pluginList"></div>
-          <button class="btn primary small" id="savePluginsBtn" style="margin-top:10px">保存插件选择</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============ 窗口：我的文件 ============ -->
-    <div class="window" id="win-files">
-      <div class="window-title">
-        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>我的文件</div>
-        <div class="controls"><button class="close" onclick="closeWindow('files')">✕</button></div>
-      </div>
-      <div class="window-body">
-        <div class="pathbar">
-          <button class="btn ghost small" id="newFolderBtn">新建文件夹</button>
-          <button class="btn ghost small" id="uploadBtn">上传文件</button>
-          <input id="fileInput" type="file" class="hidden" />
-          <span class="crumbs" id="breadcrumb"></span>
-        </div>
-        <table class="files">
-          <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ============ 窗口：管理台 ============ -->
-    <div class="window" id="win-admin">
-      <div class="window-title">
-        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/></svg>管理台</div>
-        <div class="controls"><button class="close" onclick="closeWindow('admin')">✕</button></div>
-      </div>
-      <div class="window-body">
-        <div class="section-label">用户审核与管理</div>
-        <table class="admin" id="adminUsers">
-          <thead><tr><th>用户名</th><th>角色</th><th>注册时间</th><th>操作</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </div>
   </body>
 </html>
