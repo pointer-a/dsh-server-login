@@ -2,7 +2,7 @@
 
 这份教程假设你**第一次**部署这类服务。每一步都写清楚「做什么、为什么、怎么做、应该看到什么」。照着顺序做，大约 15–30 分钟能把整套跑通。
 
-> 全文用 `example.com` 当例子，**请把所有 `example.com` 换成你自己的域名**。比如你的域名是 `dsh.xulei1112.cloud`，那么 `dsh.example.com` 就是 `dsh.xulei1112.cloud`，`*.dsh.example.com` 就是 `*.dsh.xulei1112.cloud`。
+> 全文用 `example.com` 当例子，**请把所有 `example.com` 换成你自己的域名**。比如你的域名是 `dsh.baidu.com`，那么 `dsh.example.com` 就是 `dsh.baidu.com`，`*.dsh.example.com` 就是 `*.dsh.baidu.com`。
 
 ---
 
@@ -224,7 +224,7 @@ certbot certonly --dns-cloudflare \
 ```
 
 > 如果你不用 Cloudflare，改用对应插件（阿里云 `--dns-aliyun`、腾讯云 `--dns-tencentcloud`、DNSPod `--dns-dnspod` 等），原理一样。
-
+*要注意cloudflare的免费套餐只提供托管二级及以下域名，若你的通配域名到了第三级，可以选择关闭cloudflare的代理，当然这会带来较大程度的风险*
 签好后证书在这里：
 
 ```sh
@@ -306,7 +306,7 @@ nginx -t && systemctl reload nginx
 
 ## 10. 第 9 步：（可选）账号级硬隔离
 
-> **新手可跳过这一步**，默认的「软隔离」已经能跑、能用。硬隔离是给生产环境防「一个用户偷看另一个用户文件」用的进阶项，需要 root 权限。想上再看 [security-model.md](security-model.md)。
+> **新手可跳过这一步**，默认的「软隔离」已经能跑、能用。硬隔离是给生产环境防「一个用户偷看另一个用户文件」用的进阶项，需要 root 权限。想上请看专门的教程：[hard-isolation.md](hard-isolation.md)。
 
 ---
 
