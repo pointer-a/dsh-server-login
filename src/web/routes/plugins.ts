@@ -1,13 +1,15 @@
 /**
- * Plugin listing / per-folder selection routes. The catalog comes from config;
- * selections are persisted to `folder_plugins` (keyed by the folder workspace)
- * and injected into the child DSH at launch.
+ * Plugin listing / per-folder selection routes. The catalog is discovered
+ * per-user from the resident DSH profile; selections are persisted to
+ * `folder_plugins` (keyed by the folder workspace) and injected into the child
+ * DSH at launch.
  * @module dsh-server-login/web/routes/plugins
  */
 
 import type { FastifyPluginAsync } from 'fastify'
 import { requireAuth } from '../middleware/authn.js'
 import { resolveWithinRoot } from '../middleware/fs-guard.js'
+import { listInstalledPlugins } from '../../fs/plugins.js'
 import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
 import { findWorkspaceByPath, getEnabledPluginIds, getOrCreateWorkspace, setFolderPlugins } from '../../db/repo.js'
 
@@ -50,7 +52,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     const workspace = findWorkspaceByPath(app.db, user.id, folder)
     const enabled = workspace === undefined ? [] : getEnabledPluginIds(app.db, workspace.id)
     return {
-      plugins: app.config.availablePlugins.map((plugin) => ({ ...plugin, enabled: enabled.includes(plugin.id) })),
+      plugins: listInstalledPlugins(app.config, user.id).map((plugin) => ({ ...plugin, enabled: enabled.includes(plugin.id) })),
     }
   })
 
@@ -64,8 +66,8 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return reply.code(400).send({ error: 'bad_path' })
     }
-    // Allowlist: only persist ids present in the catalog.
-    const catalogIds = new Set(app.config.availablePlugins.map((plugin) => plugin.id))
+    // Allowlist: only persist ids the user actually has installed.
+    const catalogIds = new Set(listInstalledPlugins(app.config, user.id).map((plugin) => plugin.id))
     const filtered = plugins.filter((plugin) => catalogIds.has(plugin.id))
     const workspace = getOrCreateWorkspace(app.db, user.id, folder)
     setFolderPlugins(app.db, workspace.id, filtered)

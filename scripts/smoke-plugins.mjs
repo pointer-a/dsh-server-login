@@ -1,6 +1,6 @@
 // Per-folder plugin flow: list catalog, persist a selection, then launch and
 // verify the selection is injected (patch file + --patch argv).
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,10 +24,6 @@ const app = await buildServer(
     dataRoot,
     dshCommand: [process.execPath, fakeDsh],
     enablePatch: true,
-    availablePlugins: [
-      { id: 'p1', name: 'Plugin One', description: 'first' },
-      { id: 'p2', name: 'Plugin Two', description: 'second' },
-    ],
   }),
 )
 await app.listen({ port: 0 })
@@ -41,6 +37,18 @@ createUser(app.db, {
   homeDir: '/tmp/u1-home',
 })
 mkdirSync(join(dataRoot, 'users', 'u1', 'ws', 'proj'), { recursive: true })
+
+// Install two user bundles into the resident web profile (plus one built-in
+// `@deepseek-ai/*` bundle that detection must skip).
+const profileDir = join(dataRoot, 'users', 'u1', 'home', 'profiles', 'web')
+mkdirSync(join(profileDir, 'node_modules', 'p1'), { recursive: true })
+mkdirSync(join(profileDir, 'node_modules', 'p2'), { recursive: true })
+writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+  name: 'dsh-profile-web',
+  dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'p1', 'p2'] } },
+}))
+writeFileSync(join(profileDir, 'node_modules', 'p1', 'package.json'), JSON.stringify({ name: 'p1', description: 'first' }))
+writeFileSync(join(profileDir, 'node_modules', 'p2', 'package.json'), JSON.stringify({ name: 'p2', description: 'second' }))
 
 async function json(path, { method = 'GET', body, cookie } = {}) {
   const res = await fetch(base + path, {

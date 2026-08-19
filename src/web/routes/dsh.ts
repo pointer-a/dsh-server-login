@@ -13,6 +13,7 @@ import { requireAuth } from '../middleware/authn.js'
 import { resolveWithinRoot } from '../middleware/fs-guard.js'
 import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
 import { findWorkspaceByPath, getEnabledPluginIds } from '../../db/repo.js'
+import { listInstalledPlugins } from '../../fs/plugins.js'
 import { AlreadyRunningError } from '../../supervisor/orchestrator.js'
 import { renderPatch } from '../../supervisor/patch.js'
 import { subdomainForUser } from '../../supervisor/proxy.js'
@@ -67,7 +68,11 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
     let patchPath: string | undefined
     if (app.config.enablePatch) {
       const workspace = findWorkspaceByPath(app.db, user.id, folder)
-      const enabled = workspace === undefined ? [] : getEnabledPluginIds(app.db, workspace.id)
+      // Only inject plugins the user still has installed; a stale selection for
+      // a since-removed bundle would otherwise fail to resolve in the child DSH.
+      const installed = new Set(listInstalledPlugins(app.config, user.id).map((plugin) => plugin.id))
+      const enabled = (workspace === undefined ? [] : getEnabledPluginIds(app.db, workspace.id))
+        .filter((id) => installed.has(id))
       const patchesDir = join(app.config.dataRoot, 'users', user.id, 'patches')
       mkdirSync(patchesDir, { recursive: true })
       patchPath = join(patchesDir, `${workspace?.id ?? 'default'}.yml`)

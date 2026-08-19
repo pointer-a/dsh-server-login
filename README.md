@@ -12,7 +12,7 @@ DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 
 
 - **登录与审核**：管理员先行（`bootstrap-admin`），用户注册后需管理员审核通过；独立管理台 UI。
 - **每用户隔离的 DSH 环境**：主 DSH 负责正常工作；崩溃时**按需拉起一次守护 DSH** 修复并自动重启；装插件重启时守护执行主 DSH 给出的 post-restart 命令。
-- **登录桌面**：文件浏览 / 建文件夹 / 上传；按文件夹启动 DSH；每文件夹独立勾选启用的插件（持久化并注入 cordis patch）。
+- **登录桌面**：文件浏览 / 建文件夹 / 上传；按文件夹启动 DSH；每文件夹独立勾选启用的插件（自动检测该用户 profile 中已安装的插件，持久化并注入 cordis patch）。
 - **域名访问**：默认域名 + 每用户子路径 `/u/<userId>/dsh/`；自定义域名 + nginx 配置生成接口。
 - **硬隔离**（Linux）：每用户独立 OS 账号（`setuid` 降权），`0700` 目录真正隔离跨用户读。
 
@@ -48,7 +48,6 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 | `DSH_SERVER_LOGIN_ISOLATION_MODE` | `soft` | `soft` 软隔离 / `account` 账号级硬隔离（Linux，需 root） |
 | `DSH_SERVER_LOGIN_BASE_UID` | `100000` | 账号级隔离的 uid 基数 |
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `false` | HTTPS 部署设为 `true` |
-| `DSH_SERVER_LOGIN_PLUGINS` | — | 可用插件目录（JSON 数组） |
 
 其余可调项（`dshCommand`、`spawnAsUserCommand`、`restartBackoffMs`、`sessionTtlSeconds`、`maxUploadBytes` 等）见 `src/config.ts` 与各文档。
 

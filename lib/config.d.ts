@@ -6,12 +6,6 @@
 /** Isolation tier. `soft` = per-user home/workspace + sandbox (same OS user);
  * `account` = per-user OS account via a setuid wrapper (Linux, needs root). */
 export type IsolationMode = 'soft' | 'account';
-/** A plugin available for per-folder enablement (`id` = package name). */
-export interface PluginInfo {
-    id: string;
-    name: string;
-    description: string;
-}
 /** Resolved, immutable runtime configuration. */
 export interface ServerConfig {
     /** Bind host for the orchestrator HTTP server. */
@@ -24,8 +18,6 @@ export interface ServerConfig {
     dataRoot: string;
     /** Argv used to launch a child DSH; first element is the executable. */
     dshCommand: string[];
-    /** Catalog of plugins users may enable per folder. */
-    availablePlugins: PluginInfo[];
     /** Pino log level. */
     logLevel: string;
     /** Set the `Secure` flag on session cookies (enable behind HTTPS). */
@@ -58,7 +50,6 @@ export interface ConfigOverrides {
     dbPath?: string;
     dataRoot?: string;
     dshCommand?: string[];
-    availablePlugins?: PluginInfo[];
     logLevel?: string;
     secureCookies?: boolean;
     sessionTtlSeconds?: number | string;
