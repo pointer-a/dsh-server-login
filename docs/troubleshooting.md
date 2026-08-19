@@ -14,6 +14,21 @@
 - **冷启动**：真实 DSH 冷启动 ~4s（源码启动）。编排服务在 `spawn` 事件就标「running」，但端口要等插件树 boot 完才绑。等 10 秒再开 / 再查 `ss`。
 - **spawn 即崩**：看编排服务终端的子进程 stderr（stderr 会被 pipe 过去）。常见：`--port` 改动没部署（→ EADDRINUSE）、缺 `DEEPSEEK_API_KEY` 等。
 
+## 启动 DSH 报 `spawn dsh ENOENT`
+
+- **现象**：`/api/dsh/status` 显示 `status: "crashed"`、`lastError: "spawn dsh ENOENT"`；`ps` 里没有任何 dsh 子进程；再点启动报「已有运行中的 DSH」（崩溃循环留下的残留）。
+- **根因**：systemd 的 PATH 精简，`dsh`（只装在 nvm 下）解析不到。`dsh` 脚本内部也是 `#!/usr/bin/env node`，同样需要 nvm 在 PATH。
+- **修法**：
+  1. env 里 `DSH_SERVER_LOGIN_DSH_BIN=/root/.nvm/versions/node/v22.23.2/bin/dsh`（绝对路径，版本按 `ls ~/.nvm/versions/node/` 改）。
+  2. systemd 单元加 `Environment=PATH=/root/.nvm/versions/node/v22.23.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`。
+  3. `systemctl daemon-reload && systemctl restart dsh-server-login`，再先 stop 再 launch。
+
+## 编排服务起不来：better-sqlite3 报 ERR_DLOPEN_FAILED / ABI 版本不匹配
+
+- **现象**：`journalctl -u dsh-server-login` 里 `ERR_DLOPEN_FAILED`、`was compiled against ... NODE_MODULE_VERSION ... This version requires ...`；systemd 反复重启失败。
+- **根因**：`npm install` 用 nvm Node 编译了 `better-sqlite3` 原生模块，但 systemd 的 `ExecStart=/usr/bin/env node` 解析到**另一个 Node 版本**，ABI 对不上。
+- **修法**：`ExecStart` 用 nvm node 绝对路径（如 `/root/.nvm/versions/node/v22.23.2/bin/node lib/cli.js`），并 `npm rebuild better-sqlite3` 用同一个 node。
+
 ## 端口冲突：子 DSH 和编排服务抢 3080
 
 - **现象**：手动跑 `dsh web` 报 `EADDRINUSE 0.0.0.0:3080`。

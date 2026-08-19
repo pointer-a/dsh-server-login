@@ -113,6 +113,8 @@ npm run build
 管理员是第一个账号，由他审核其他注册用户。
 
 ```sh
+# 先加载环境变量（让数据库路径一致，见下面警告）
+source /etc/dsh-server-login.env
 node lib/cli.js bootstrap-admin --username admin --password '你的强密码'
 ```
 
@@ -121,7 +123,9 @@ node lib/cli.js bootstrap-admin --username admin --password '你的强密码'
 
 看到 `admin "admin" created (...)` 就成功了。
 
-> 这一步只是往数据库里插一条管理员记录。数据库默认存在 `~/.dsh-server-login/server-login.db`。
+> ⚠️ **数据库路径必须全程一致**：管理员、编排服务、systemd 用的必须是**同一个数据库**。
+> 本教程统一用 `<DATA_ROOT>/server-login.db`（= `/var/lib/dsh-server-login/server-login.db`），所以**建管理员和启动服务都不加 `--db`、都先 `source /etc/dsh-server-login.env`**。
+> 如果你在某处加了 `--db 别的路径`，那建管理员和 systemd **必须加同一个路径**，否则登录不进。
 
 ---
 
@@ -136,7 +140,7 @@ DSH_SERVER_LOGIN_DATA_ROOT=/var/lib/dsh-server-login
 DSH_SERVER_LOGIN_BASE_DOMAIN=dsh.example.com
 DSH_SERVER_LOGIN_COOKIE_DOMAIN=.dsh.example.com
 DSH_SERVER_LOGIN_SECURE_COOKIES=true
-DSH_SERVER_LOGIN_DSH_BIN=dsh
+DSH_SERVER_LOGIN_DSH_BIN=/root/.nvm/versions/node/v22.23.2/bin/dsh
 DEEPSEEK_API_KEY=sk-你的deepseek密钥
 EOF
 ```
@@ -150,7 +154,7 @@ EOF
 | `DSH_SERVER_LOGIN_BASE_DOMAIN` | `dsh.example.com` | **关键**：告诉编排服务「子域名长什么样」——`<用户名>.dsh.example.com`。 |
 | `DSH_SERVER_LOGIN_COOKIE_DOMAIN` | `.dsh.example.com` | **关键**：登录 cookie 加这个 `Domain`，才能被子域名共享。注意前面的**点**。 |
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `true` | 走 HTTPS，cookie 必须标 `Secure`。 |
-| `DSH_SERVER_LOGIN_DSH_BIN` | `dsh` | 编排服务用它来启动每个用户的 DSH。 |
+| `DSH_SERVER_LOGIN_DSH_BIN` | `/root/.nvm/versions/node/v22.23.2/bin/dsh` | 编排服务用它启动每个用户的 DSH。**用绝对路径**，别写 `dsh`——systemd 的 PATH 找不到（否则报 `spawn dsh ENOENT`）。版本号按你实际 nvm 版本改：`ls ~/.nvm/versions/node/`。 |
 | `DEEPSEEK_API_KEY` | 你的 key | 每个 DSH 进程会继承它，用于调 DeepSeek 模型。 |
 
 ### 6.1 先手动跑一次（验证能起来）
@@ -173,7 +177,8 @@ After=network.target
 [Service]
 WorkingDirectory=/root/dsh-server-login
 EnvironmentFile=/etc/dsh-server-login.env
-ExecStart=/usr/bin/env node lib/cli.js
+Environment=PATH=/root/.nvm/versions/node/v22.23.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/root/.nvm/versions/node/v22.23.2/bin/node lib/cli.js
 Restart=on-failure
 
 [Install]
@@ -186,6 +191,11 @@ systemctl status dsh-server-login   # 看到 active (running) 就对了
 ```
 
 > 把 `WorkingDirectory` 换成你实际 `git clone` 的目录（上面假设是 `/root/dsh-server-login`）。
+
+> ⚠️ **两个 nvm + systemd 必踩的坑**（不这样写就会起不来）：
+> 1. **`ExecStart` 必须用 nvm node 的绝对路径**，不能写 `/usr/bin/env node`——systemd 的 PATH 没有 nvm，`node` 会解析到别的版本，导致 `better-sqlite3` 原生模块报 `ERR_DLOPEN_FAILED`（ABI 版本不匹配，编排服务起不来）。
+> 2. **必须把 nvm 的 bin 加进 PATH**（上面那行 `Environment=PATH=...`）——否则编排服务 spawn 子 DSH 时 `dsh` 找不到（`spawn dsh ENOENT`），而且 `dsh` 脚本内部也是 `#!/usr/bin/env node`，同样需要 `node` 在 PATH。
+> 上面所有 nvm 路径按你实际版本改：`ls ~/.nvm/versions/node/`。
 
 ---
 
@@ -328,6 +338,8 @@ nginx -t && systemctl reload nginx
 4. **用户登录**：carol 登录 → 进入桌面（文件浏览器）。
 5. **启动 DSH**：桌面点「在此文件夹启动 DSH」→ 显示「运行中」。
 6. **打开 DSH**：点「打开 DSH」→ 跳到 `https://carol.dsh.example.com/` → 看到 DSH 聊天界面（不是 502/404/401）。
+
+> ⏳ **冷启动**：真实 DSH 启动要 **几秒到十几秒**（源码启动约 4s）。点「启动」后 `status` 会先显示 `running`，但端口要等插件树 boot 完才绑上——**别立刻点「打开 DSH」，等 10 秒再开**，否则会 502。
 
 ### 如果某一步卡住了
 
