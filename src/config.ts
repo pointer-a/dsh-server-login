@@ -4,6 +4,8 @@
  * @module dsh-server-login/config
  */
 
+import { randomBytes } from 'node:crypto'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -54,6 +56,8 @@ export interface ServerConfig {
   cookieDomain: string
   /** Whether to pass `--patch` to child DSHs (needs a dsh CLI that supports it). */
   enablePatch: boolean
+  /** Secret used to encrypt per-user secrets at rest (from env or dataRoot/secret.key). */
+  encryptionSecret: string
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -75,6 +79,7 @@ export interface ConfigOverrides {
   baseDomain?: string
   cookieDomain?: string
   enablePatch?: boolean
+  encryptionSecret?: string
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -99,6 +104,24 @@ const DEFAULT_BASE_UID = 100000
 const DEFAULT_BASE_DOMAIN = ''
 const DEFAULT_COOKIE_DOMAIN = ''
 const DEFAULT_ENABLE_PATCH = false
+
+/** Load the encryption secret from env, or persist a generated one at
+ * `<dataRoot>/secret.key` (0600) so it survives restarts without setup. */
+function resolveEncryptionSecret(dataRoot: string): string {
+  const fromEnv = process.env.DSH_SERVER_LOGIN_SECRET
+  if (fromEnv !== undefined && fromEnv !== '') return fromEnv
+  const path = join(dataRoot, 'secret.key')
+  try {
+    const existing = readFileSync(path, 'utf8').trim()
+    if (existing !== '') return existing
+  } catch {
+    // fall through to generate
+  }
+  const secret = randomBytes(32).toString('hex')
+  mkdirSync(dataRoot, { recursive: true })
+  writeFileSync(path, secret, { mode: 0o600 })
+  return secret
+}
 
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
@@ -157,5 +180,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     baseDomain: overrides.baseDomain ?? process.env.DSH_SERVER_LOGIN_BASE_DOMAIN ?? DEFAULT_BASE_DOMAIN,
     cookieDomain: overrides.cookieDomain ?? process.env.DSH_SERVER_LOGIN_COOKIE_DOMAIN ?? DEFAULT_COOKIE_DOMAIN,
     enablePatch: overrides.enablePatch ?? toBool(process.env.DSH_SERVER_LOGIN_ENABLE_PATCH, DEFAULT_ENABLE_PATCH),
+    encryptionSecret:
+      overrides.encryptionSecret ?? resolveEncryptionSecret(dataRoot),
   }
 }

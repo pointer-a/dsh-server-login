@@ -9,12 +9,15 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
+import { deriveKey, encrypt } from '../../crypto.js'
 import {
   audit,
   createSession,
   createUser,
   deleteSession,
   findUserByUsername,
+  getUserApiKeyRef,
+  setUserApiKeyRef,
   toPublicUser,
 } from '../../db/repo.js'
 import {
@@ -115,4 +118,28 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   })
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (request) => ({ user: request.user }))
+
+  const keySchema = {
+    body: {
+      type: 'object',
+      required: ['apiKey'],
+      additionalProperties: false,
+      properties: { apiKey: { type: 'string', minLength: 1, maxLength: 256 } },
+    },
+  } as const
+
+  app.get('/api/me/key', { preHandler: requireAuth }, async (request) => ({
+    hasKey: getUserApiKeyRef(app.db, request.user!.id) !== null,
+  }))
+
+  app.put('/api/me/key', { preHandler: requireAuth, schema: keySchema }, async (request, reply) => {
+    const { apiKey } = request.body as { apiKey: string }
+    // Header-safe charset only: reject spaces, quotes, non-ASCII, etc.
+    if (!/^[A-Za-z0-9\-_.]{1,256}$/.test(apiKey)) {
+      return reply.code(400).send({ error: 'invalid_api_key' })
+    }
+    setUserApiKeyRef(app.db, request.user!.id, encrypt(apiKey, deriveKey(app.config.encryptionSecret)))
+    audit(app.db, request.user!.id, 'set_api_key', null)
+    return { ok: true }
+  })
 }

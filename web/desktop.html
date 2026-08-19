@@ -103,6 +103,12 @@
           <div id="pluginList"></div>
           <button class="btn primary small" id="savePluginsBtn" style="margin-top:10px">保存插件选择</button>
         </div>
+        <div class="section-label">我的 DeepSeek API 密钥（仅用于你启动的 DSH）</div>
+        <div class="row-actions">
+          <input id="apiKeyInput" type="password" placeholder="sk-..." autocomplete="off" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:14px;color:var(--ink)" />
+          <button class="btn primary" id="saveKeyBtn">保存</button>
+        </div>
+        <div id="apiKeyStatus" style="font-size:12px;color:var(--ink-soft);margin-top:6px"></div>
       </div>
       <div class="resize" title="拖动缩放"></div>
     </div>
@@ -373,6 +379,23 @@
       })
       document.getElementById('stopBtn').addEventListener('click', async () => { await fetch('/api/dsh/stop', { method: 'POST' }); await refreshDsh() })
 
+      // API key
+      async function refreshKeyStatus() {
+        const res = await fetch('/api/me/key')
+        if (!res.ok) return
+        const { hasKey } = await res.json()
+        document.getElementById('apiKeyStatus').textContent = hasKey ? '✓ 已设置' : '未设置（你的 DSH 将无法调用模型）'
+      }
+      document.getElementById('saveKeyBtn').addEventListener('click', async () => {
+        const apiKey = document.getElementById('apiKeyInput').value.trim()
+        if (!apiKey) { alert('请输入 API 密钥'); return }
+        const res = await fetch('/api/me/key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKey }) })
+        if (!res.ok) { alert('密钥格式无效（只能含字母数字 - _ .）'); return }
+        document.getElementById('apiKeyInput').value = ''
+        await refreshKeyStatus()
+        alert('已保存')
+      })
+
       let pluginCatalog = []
       async function loadPlugins() {
         const folder = pathString()
@@ -444,6 +467,7 @@
         }
         await syncAll()
         await refreshDsh()
+        await refreshKeyStatus()
       })()
     </script>
   </body>

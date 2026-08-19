@@ -48,6 +48,8 @@ export interface ServerConfig {
     cookieDomain: string;
     /** Whether to pass `--patch` to child DSHs (needs a dsh CLI that supports it). */
     enablePatch: boolean;
+    /** Secret used to encrypt per-user secrets at rest (from env or dataRoot/secret.key). */
+    encryptionSecret: string;
 }
 /** Untyped overrides collected from argv / env. */
 export interface ConfigOverrides {
@@ -68,6 +70,7 @@ export interface ConfigOverrides {
     baseDomain?: string;
     cookieDomain?: string;
     enablePatch?: boolean;
+    encryptionSecret?: string;
 }
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to

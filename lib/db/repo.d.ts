@@ -95,6 +95,10 @@ export declare function findDomainById(db: Database, id: string): Domain | undef
 export declare function listDomains(db: Database): Domain[];
 /** Upsert a user's custom domain (resetting `verified` to 0). */
 export declare function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain;
+/** Store a user's encrypted API-key ref. Returns whether a row was updated. */
+export declare function setUserApiKeyRef(db: Database, userId: string, encryptedRef: string | null): boolean;
+/** Read a user's encrypted API-key ref (decrypt with the deployment secret). */
+export declare function getUserApiKeyRef(db: Database, userId: string): string | null;
 /** Set the verified flag on a domain. */
 export declare function setDomainVerified(db: Database, id: string, verified: boolean): boolean;
 /** A session joined with its user, for the authn hot path (one query). */

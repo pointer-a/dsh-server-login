@@ -141,7 +141,6 @@ DSH_SERVER_LOGIN_BASE_DOMAIN=dsh.example.com
 DSH_SERVER_LOGIN_COOKIE_DOMAIN=.dsh.example.com
 DSH_SERVER_LOGIN_SECURE_COOKIES=true
 DSH_SERVER_LOGIN_DSH_BIN=/root/.nvm/versions/node/v22.23.2/bin/dsh
-DEEPSEEK_API_KEY=sk-你的deepseek密钥
 EOF
 ```
 
@@ -155,7 +154,8 @@ EOF
 | `DSH_SERVER_LOGIN_COOKIE_DOMAIN` | `.dsh.example.com` | **关键**：登录 cookie 加这个 `Domain`，才能被子域名共享。注意前面的**点**。 |
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `true` | 走 HTTPS，cookie 必须标 `Secure`。 |
 | `DSH_SERVER_LOGIN_DSH_BIN` | `/root/.nvm/versions/node/v22.23.2/bin/dsh` | 编排服务用它启动每个用户的 DSH。**用绝对路径**，别写 `dsh`——systemd 的 PATH 找不到（否则报 `spawn dsh ENOENT`）。版本号按你实际 nvm 版本改：`ls ~/.nvm/versions/node/`。 |
-| `DEEPSEEK_API_KEY` | 你的 key | 每个 DSH 进程会继承它，用于调 DeepSeek 模型。 |
+
+> 🔑 **API 密钥是每用户自己的**：不再在环境变量里配平台 key。每个用户登录后，在桌面 → DSH 窗口里填自己的 DeepSeek API 密钥（加密存在该用户自己的数据里），spawn 时只注入他自己的 key。未设置 key 的用户，其 DSH 能启动但无法调用模型。
 
 ### 6.1 先手动跑一次（验证能起来）
 

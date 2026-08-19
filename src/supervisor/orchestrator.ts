@@ -61,7 +61,11 @@ export class Supervisor {
   private readonly children = new Map<string, ChildProcess>()
   private readonly restartTimers = new Map<string, NodeJS.Timeout>()
 
-  constructor(private readonly config: ServerConfig) {}
+  constructor(
+    private readonly config: ServerConfig,
+    /** Resolve the user's own API key (decrypted); null = user has none. */
+    private readonly resolveApiKey: (userId: string) => string | null,
+  ) {}
 
   /** Spawn the resident main DSH for a user (watchdog is pulled up on demand). */
   async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
@@ -122,11 +126,14 @@ export class Supervisor {
 
   private baseEnv(userId: string): Record<string, string> {
     const home = join(this.config.dataRoot, 'users', userId, 'home')
+    const apiKey = this.resolveApiKey(userId)
     return {
       ...scrubEnv(process.env),
       HOME: home, // point the child at its own home, not the orchestrator's
       DSH_HOME: home,
-      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? '',
+      // Each user's own key; omit entirely when unset so the harness reports
+      // "no key" instead of a header-hostile value.
+      ...(apiKey !== null ? { DEEPSEEK_API_KEY: apiKey } : {}),
     }
   }
 

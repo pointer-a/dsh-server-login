@@ -71,5 +71,20 @@ r = await json('/api/auth/me', { cookie: aliceCookie })
 console.log('me (alice)              ->', r.status, r.body?.user)
 assert(r.status === 200 && r.body.user.username === 'alice', '/me returns the current user')
 
+r = await json('/api/me/key', { cookie: aliceCookie })
+console.log('key (none)              ->', r.status, r.body)
+assert(r.body?.hasKey === false, 'no key initially')
+
+r = await json('/api/me/key', { method: 'PUT', cookie: aliceCookie, body: { apiKey: 'sk-good1-abc' } })
+console.log('key (set)               ->', r.status)
+assert(r.status === 200, 'key is stored')
+
+r = await json('/api/me/key', { cookie: aliceCookie })
+assert(r.body?.hasKey === true, 'hasKey true after setting')
+
+r = await json('/api/me/key', { method: 'PUT', cookie: aliceCookie, body: { apiKey: 'bad key with space' } })
+console.log('key (bad charset)       ->', r.status)
+assert(r.status === 400, 'header-hostile key is rejected')
+
 await app.close()
-console.log('OK: full auth + review flow passed')
+console.log('OK: full auth + review + per-user key flow passed')

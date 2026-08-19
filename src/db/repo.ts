@@ -292,6 +292,18 @@ export function upsertDomain(db: Database, userId: string, domain: string, nginx
   return findDomainByUser(db, userId)!
 }
 
+/** Store a user's encrypted API-key ref. Returns whether a row was updated. */
+export function setUserApiKeyRef(db: Database, userId: string, encryptedRef: string | null): boolean {
+  const info = prepare(db, 'UPDATE users SET api_key_ref = ? WHERE id = ?').run(encryptedRef, userId)
+  return info.changes > 0
+}
+
+/** Read a user's encrypted API-key ref (decrypt with the deployment secret). */
+export function getUserApiKeyRef(db: Database, userId: string): string | null {
+  const row = prepare(db, 'SELECT api_key_ref FROM users WHERE id = ?').get(userId) as { api_key_ref: string | null } | undefined
+  return row?.api_key_ref ?? null
+}
+
 /** Set the verified flag on a domain. */
 export function setDomainVerified(db: Database, id: string, verified: boolean): boolean {
   const info = prepare(db, 'UPDATE domains SET verified = ?, updated_at = ? WHERE id = ?')

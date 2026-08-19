@@ -39,11 +39,15 @@ export interface UserStatus {
  */
 export declare class Supervisor {
     private readonly config;
+    /** Resolve the user's own API key (decrypted); null = user has none. */
+    private readonly resolveApiKey;
     private readonly mains;
     private readonly watchdogs;
     private readonly children;
     private readonly restartTimers;
-    constructor(config: ServerConfig);
+    constructor(config: ServerConfig, 
+    /** Resolve the user's own API key (decrypted); null = user has none. */
+    resolveApiKey: (userId: string) => string | null);
     /** Spawn the resident main DSH for a user (watchdog is pulled up on demand). */
     launch(userId: string, folder: string, patchPath?: string): Promise<Instance>;
     /** Stop the current main (clean) and respawn it with the same folder/patch. */

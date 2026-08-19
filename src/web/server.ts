@@ -10,7 +10,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { openDatabase, type Database } from '../db/connection.js'
-import type { PublicUser } from '../db/repo.js'
+import { getUserApiKeyRef, type PublicUser } from '../db/repo.js'
+import { decrypt, deriveKey } from '../crypto.js'
 import { Supervisor } from '../supervisor/orchestrator.js'
 import { registerDshProxy } from '../supervisor/proxy.js'
 import { rateLimit } from './middleware/rate-limit.js'
@@ -41,7 +42,16 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../../web')
  */
 export async function buildServer(config: ServerConfig): Promise<FastifyInstance> {
   const db = openDatabase(config.dbPath)
-  const supervisor = new Supervisor(config)
+  const encryptionKey = deriveKey(config.encryptionSecret)
+  const supervisor = new Supervisor(config, (userId) => {
+    const ref = getUserApiKeyRef(db, userId)
+    if (ref === null) return null
+    try {
+      return decrypt(ref, encryptionKey)
+    } catch {
+      return null // corrupt ref — treat as unset, let the user re-enter it
+    }
+  })
 
   const app = Fastify({
     logger: { level: config.logLevel },
