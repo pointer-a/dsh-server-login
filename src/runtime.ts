@@ -78,7 +78,7 @@ export function watchdogSection(runtime: RuntimeEnv): PromptSection {
 export function apply(ctx: {
   systemPrompt?: { section(section: PromptSection): () => void }
   on?: (event: string, fn: () => void) => void
-  workspaceRegistry?: { create(path: string, title?: string): unknown }
+  get?: (name: string, strict?: boolean) => unknown
 }): void {
   const runtime = readRuntimeEnv()
   // eslint-disable-next-line no-console
@@ -90,13 +90,20 @@ export function apply(ctx: {
     ctx.on?.('dispose', dispose)
   }
   // Register the launch folder as a DSH workspace so the session's working
-  // directory matches the folder the user opened from. Best-effort: a missing
-  // directory or a profile without the workspace registry must not fail boot.
-  if (runtime.role === 'main' && runtime.workspace !== undefined && ctx.workspaceRegistry !== undefined) {
-    try {
-      ctx.workspaceRegistry.create(runtime.workspace)
-    } catch (error) {
-      console.log(`[dsh-server-login-runtime] workspace register failed: ${String(error)}`)
+  // directory matches the folder the user opened from. Read the registry via
+  // `ctx.get` (not a property access) so a profile without it — the headless
+  // watchdog — resolves to `undefined` instead of throwing on an un-injected
+  // service. Best-effort: a missing directory must not fail boot.
+  if (runtime.role === 'main' && runtime.workspace !== undefined && ctx.get !== undefined) {
+    const registry = ctx.get('workspaceRegistry', false) as
+      | { create(path: string, title?: string): unknown }
+      | undefined
+    if (registry !== undefined) {
+      try {
+        registry.create(runtime.workspace)
+      } catch (error) {
+        console.log(`[dsh-server-login-runtime] workspace register failed: ${String(error)}`)
+      }
     }
   }
 }

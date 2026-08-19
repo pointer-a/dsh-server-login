@@ -126,10 +126,14 @@ export class Supervisor {
 
   private baseEnv(userId: string): Record<string, string> {
     const home = join(this.config.dataRoot, 'users', userId, 'home')
+    const workspace = join(this.config.dataRoot, 'users', userId, 'ws')
     const apiKey = this.resolveApiKey(userId)
     return {
       ...scrubEnv(process.env),
-      HOME: home, // point the child at its own home, not the orchestrator's
+      // HOME drives the child's directory picker default (homedir()); point it
+      // at the user's workspace so their folders show, not DSH's internal home.
+      HOME: workspace,
+      // DSH's own state (profiles/sessions/credentials) stays in `home`.
       DSH_HOME: home,
       // Each user's own key; omit entirely when unset so the harness reports
       // "no key" instead of a header-hostile value.

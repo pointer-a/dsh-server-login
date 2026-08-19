@@ -45,7 +45,5 @@ export declare function apply(ctx: {
         section(section: PromptSection): () => void;
     };
     on?: (event: string, fn: () => void) => void;
-    workspaceRegistry?: {
-        create(path: string, title?: string): unknown;
-    };
+    get?: (name: string, strict?: boolean) => unknown;
 }): void;
