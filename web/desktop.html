@@ -168,11 +168,27 @@
         win.classList.add('focused')
         win.style.zIndex = ++zTop.n
       }
+      function saveWindowState(win) {
+        try {
+          localStorage.setItem('dsh-win-' + win.id, JSON.stringify({
+            left: win.offsetLeft, top: win.offsetTop, width: win.offsetWidth, height: win.offsetHeight,
+          }))
+        } catch { /* storage unavailable — ignore */ }
+      }
+      function loadWindowState(id) {
+        try { return JSON.parse(localStorage.getItem('dsh-win-' + id) || 'null') } catch { return null }
+      }
       function positionWindow(win) {
         if (win.dataset.placed) return
         win.dataset.placed = '1'
-        win.style.left = Math.round((innerWidth - 620) / 2 + (Math.random() * 40 - 20)) + 'px'
-        win.style.top = Math.round((innerHeight - 460) / 2 + (Math.random() * 40 - 20)) + 'px'
+        const saved = loadWindowState(win.id)
+        if (saved && saved.width && saved.height) {
+          win.style.left = saved.left + 'px'; win.style.top = saved.top + 'px'
+          win.style.width = saved.width + 'px'; win.style.height = saved.height + 'px'
+        } else {
+          win.style.left = Math.round((innerWidth - 620) / 2 + (Math.random() * 40 - 20)) + 'px'
+          win.style.top = Math.round((innerHeight - 460) / 2 + (Math.random() * 40 - 20)) + 'px'
+        }
       }
       document.querySelectorAll('.window-title').forEach((bar) => {
         bar.addEventListener('pointerdown', (e) => {
@@ -181,27 +197,46 @@
           if (e.target.closest('button')) return
           const sx = e.clientX, sy = e.clientY, l = win.offsetLeft, t = win.offsetTop
           const move = (ev) => { win.style.left = l + (ev.clientX - sx) + 'px'; win.style.top = t + (ev.clientY - sy) + 'px' }
-          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); saveWindowState(win) }
           window.addEventListener('pointermove', move)
           window.addEventListener('pointerup', up)
         })
       })
       document.querySelectorAll('.window').forEach((w) => w.addEventListener('pointerdown', () => focusWindow(w)))
-      // resize by bottom-right handle
-      document.querySelectorAll('.resize').forEach((rz) => {
-        rz.addEventListener('pointerdown', (e) => {
-          e.stopPropagation()
-          const win = rz.closest('.window')
-          focusWindow(win)
-          const sx = e.clientX, sy = e.clientY, w = win.offsetWidth, h = win.offsetHeight
-          const move = (ev) => {
-            win.style.width = Math.max(380, w + (ev.clientX - sx)) + 'px'
-            win.style.height = Math.max(240, h + (ev.clientY - sy)) + 'px'
-          }
-          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
-          window.addEventListener('pointermove', move)
-          window.addEventListener('pointerup', up)
-        })
+      // resize from any edge/corner
+      const MIN_W = 380, MIN_H = 240
+      function startResize(win, e, dir) {
+        e.stopPropagation()
+        focusWindow(win)
+        const sx = e.clientX, sy = e.clientY
+        const r = win.getBoundingClientRect()
+        const start = { left: r.left, top: r.top, width: win.offsetWidth, height: win.offsetHeight }
+        const L = dir.includes('w'), R = dir.includes('e'), T = dir.includes('n'), B = dir.includes('s')
+        const move = (ev) => {
+          const dx = ev.clientX - sx, dy = ev.clientY - sy
+          let left = start.left, top = start.top, width = start.width, height = start.height
+          if (R) width = Math.max(MIN_W, start.width + dx)
+          if (L) { width = Math.max(MIN_W, start.width - dx); left = start.left + (start.width - width) }
+          if (B) height = Math.max(MIN_H, start.height + dy)
+          if (T) { height = Math.max(MIN_H, start.height - dy); top = start.top + (start.height - height) }
+          win.style.left = left + 'px'; win.style.top = top + 'px'
+          win.style.width = width + 'px'; win.style.height = height + 'px'
+        }
+        const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); saveWindowState(win) }
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', up)
+      }
+      document.querySelectorAll('.window').forEach((win) => {
+        for (const d of ['n', 's', 'e', 'w', 'ne', 'nw', 'sw']) {
+          const h = document.createElement('div')
+          h.className = 'rz rz-' + d
+          h.title = '拖动缩放'
+          h.addEventListener('pointerdown', (e) => startResize(win, e, d))
+          win.appendChild(h)
+        }
+      })
+      document.querySelectorAll('.window .resize').forEach((rz) => {
+        rz.addEventListener('pointerdown', (e) => startResize(rz.closest('.window'), e, 'se'))
       })
       // open apps (single click) + taskbar
       document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openWindow(el.dataset.open)))

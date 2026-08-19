@@ -158,11 +158,16 @@ body {
 }
 @keyframes win-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 .window.focused { box-shadow: 0 26px 70px -20px rgba(0,0,0,0.55); }
-.window .resize {
-  position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
-  cursor: nwse-resize; z-index: 3; touch-action: none;
-}
-.window .resize::after {
+.window .rz, .window .resize { position: absolute; z-index: 3; touch-action: none; }
+.window .rz-n { top: 0; left: 16px; right: 16px; height: 6px; cursor: ns-resize; }
+.window .rz-s { bottom: 0; left: 16px; right: 16px; height: 6px; cursor: ns-resize; }
+.window .rz-e { right: 0; top: 48px; bottom: 0; width: 6px; cursor: ew-resize; }
+.window .rz-w { left: 0; top: 48px; bottom: 0; width: 6px; cursor: ew-resize; }
+.window .rz-ne { top: 30px; right: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+.window .rz-nw { top: 30px; left: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+.window .rz-se, .window .resize { bottom: 0; right: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+.window .rz-sw { bottom: 0; left: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+.window .rz-se::after, .window .resize::after {
   content: ""; position: absolute; right: 4px; bottom: 4px; width: 9px; height: 9px;
   border-right: 2px solid rgba(120, 132, 160, 0.55);
   border-bottom: 2px solid rgba(120, 132, 160, 0.55);
