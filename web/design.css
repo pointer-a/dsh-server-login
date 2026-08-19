@@ -47,6 +47,10 @@ body {
 .auth-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .auth-brand .logo { width: 34px; height: 34px; border-radius: 9px; }
 .auth-brand h1 { font-size: 19px; margin: 0; letter-spacing: 0.2px; }
+.wordmark { display: inline-flex; align-items: center; }
+.wordmark svg { height: 100%; width: auto; display: block; }
+.auth-brand .wordmark { height: 22px; color: var(--ink); }
+.topbar .wordmark { height: 20px; color: #dbe5ff; }
 .auth-sub { color: var(--ink-soft); font-size: 13px; margin: 6px 0 22px; }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
