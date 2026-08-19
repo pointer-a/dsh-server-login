@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Standalone orchestrator entry (`dsh-server-login` bin).
  *
