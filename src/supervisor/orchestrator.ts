@@ -116,9 +116,11 @@ export class Supervisor {
   }
 
   private baseEnv(userId: string): Record<string, string> {
+    const home = join(this.config.dataRoot, 'users', userId, 'home')
     return {
       ...scrubEnv(process.env),
-      DSH_HOME: join(this.config.dataRoot, 'users', userId, 'home'),
+      HOME: home, // point the child at its own home, not the orchestrator's
+      DSH_HOME: home,
       DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY ?? '',
     }
   }
