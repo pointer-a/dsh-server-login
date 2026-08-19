@@ -63,6 +63,16 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 
 默认**软隔离**（每用户 `$DSH_HOME` + session `cwd` + 沙箱写隔离）。Linux 生产部署建议开启**账号级硬隔离**（每用户 OS 账号，闭合同 UID 越权读）。详见 [docs/deployment.md](docs/deployment.md)。
 
+## 发布与市场收录
+
+以 [DSH 插件市场](https://github.com/bradeGithub/DSH-Plugins-Marketplace) 的 **cordis-plugin（产物型）** 形态分发（[STANDARD.md](STANDARD.md)）。当前状态：
+
+- 仓库：`github.com/pointer-a/dsh-server-login`（**public**，已加 topic `dsh-plugin`）
+- npm 包名 `dsh-server-login`（未被占用）
+- **STANDARD §7 自测 14 项全部通过**：cordis 插件判定（`dsh` 字段 + `dsh.bundle.patch`）、产物型 `main` 存在、无根 install 脚本、`dependencies` 无宿主包、描述无分类敏感词、版本 semver、披露 D1/D3/D4 齐全、MIT 许可
+- 市场 CI 每 2 小时扫描一次 `dsh-plugin` topic 自动收录（最近一次推送后等待扫描周期）
+
+> 每次发版请 **bump `version`**（市场用它对「更新」检测），并重新确认披露字段与实际行为一致。
 
 ## 许可证
 
