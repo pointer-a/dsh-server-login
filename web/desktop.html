@@ -201,18 +201,22 @@
           win.style.top = Math.round((innerHeight - 460) / 2 + (Math.random() * 40 - 20)) + 'px'
         }
       }
-      document.querySelectorAll('.window-title').forEach((bar) => {
-        bar.addEventListener('pointerdown', (e) => {
-          const win = bar.closest('.window')
-          focusWindow(win)
-          if (e.target.closest('button')) return
-          const sx = e.clientX, sy = e.clientY, l = win.offsetLeft, t = win.offsetTop
-          const move = (ev) => { win.style.left = l + (ev.clientX - sx) + 'px'; win.style.top = t + (ev.clientY - sy) + 'px' }
-          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); saveWindowState(win) }
-          window.addEventListener('pointermove', move)
-          window.addEventListener('pointerup', up)
+      // Touch devices: windows are full-screen (CSS), so no drag/resize needed.
+      const TOUCH = window.matchMedia('(pointer: coarse)').matches
+      if (!TOUCH) {
+        document.querySelectorAll('.window-title').forEach((bar) => {
+          bar.addEventListener('pointerdown', (e) => {
+            const win = bar.closest('.window')
+            focusWindow(win)
+            if (e.target.closest('button')) return
+            const sx = e.clientX, sy = e.clientY, l = win.offsetLeft, t = win.offsetTop
+            const move = (ev) => { win.style.left = l + (ev.clientX - sx) + 'px'; win.style.top = t + (ev.clientY - sy) + 'px' }
+            const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); saveWindowState(win) }
+            window.addEventListener('pointermove', move)
+            window.addEventListener('pointerup', up)
+          })
         })
-      })
+      }
       document.querySelectorAll('.window').forEach((w) => w.addEventListener('pointerdown', () => focusWindow(w)))
       // resize from any edge/corner
       const MIN_W = 380, MIN_H = 240
@@ -237,18 +241,20 @@
         window.addEventListener('pointermove', move)
         window.addEventListener('pointerup', up)
       }
-      document.querySelectorAll('.window').forEach((win) => {
-        for (const d of ['n', 's', 'e', 'w', 'ne', 'nw', 'sw']) {
-          const h = document.createElement('div')
-          h.className = 'rz rz-' + d
-          h.title = '拖动缩放'
-          h.addEventListener('pointerdown', (e) => startResize(win, e, d))
-          win.appendChild(h)
-        }
-      })
-      document.querySelectorAll('.window .resize').forEach((rz) => {
-        rz.addEventListener('pointerdown', (e) => startResize(rz.closest('.window'), e, 'se'))
-      })
+      if (!TOUCH) {
+        document.querySelectorAll('.window').forEach((win) => {
+          for (const d of ['n', 's', 'e', 'w', 'ne', 'nw', 'sw']) {
+            const h = document.createElement('div')
+            h.className = 'rz rz-' + d
+            h.title = '拖动缩放'
+            h.addEventListener('pointerdown', (e) => startResize(win, e, d))
+            win.appendChild(h)
+          }
+        })
+        document.querySelectorAll('.window .resize').forEach((rz) => {
+          rz.addEventListener('pointerdown', (e) => startResize(rz.closest('.window'), e, 'se'))
+        })
+      }
       // open apps (single click) + taskbar
       document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openWindow(el.dataset.open)))
       document.querySelectorAll('[data-app]').forEach((el) => el.addEventListener('click', () => appAction(el.dataset.app)))

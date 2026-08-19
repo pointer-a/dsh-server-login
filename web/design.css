@@ -224,6 +224,37 @@ table.admin th { color: var(--ink-soft); font-weight: 600; font-size: 12px; }
 
 .hidden { display: none !important; }
 
+/* ---------- mobile ---------- */
+@media (max-width: 768px) {
+  .auth-card { max-width: 100%; overflow-x: auto; }
+  .desktop { overflow: hidden; }
+  .topbar { padding: 0 10px; height: 48px; }
+  .topbar .role { display: none; }
+  .icons { padding: 10px; gap: 6px; }
+  .desk-icon { width: 80px; padding: 8px 4px; }
+  .desk-icon .tile { width: 52px; height: 52px; border-radius: 14px; }
+  .desk-icon .label { font-size: 11px; }
+  .desk-path { padding: 8px 10px 0; font-size: 12px; }
+  .desk-path .loc { max-width: 70vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .taskbar { height: 50px; }
+  .taskbar .clock { display: none; }
+  /* windows go full-screen on phones */
+  .window {
+    position: fixed !important;
+    inset: 0 !important;
+    left: 0 !important; top: 0 !important;
+    width: 100% !important; height: 100% !important;
+    min-width: 0 !important; min-height: 0 !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+  }
+  .window .rz, .window .resize { display: none; }
+  .window-body { -webkit-overflow-scrolling: touch; }
+  .window-body table { min-width: 520px; }
+  .window-title { height: 48px; }
+  .window-title .controls button { width: 34px; height: 34px; }
+}
+
 /* desktop file grid + path bar */
 .desk-path { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 12px 22px 0; color: #cfe0ff; font-size: 13px; }
 .desk-path .back { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16); color: #dbe5ff; }
