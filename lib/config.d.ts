@@ -46,6 +46,8 @@ export interface ServerConfig {
     baseDomain: string;
     /** Cookie `Domain` value (e.g. `.example.com`) so the session reaches subdomains; empty = host-only. */
     cookieDomain: string;
+    /** Whether to pass `--patch` to child DSHs (needs a dsh CLI that supports it). */
+    enablePatch: boolean;
 }
 /** Untyped overrides collected from argv / env. */
 export interface ConfigOverrides {
@@ -65,6 +67,7 @@ export interface ConfigOverrides {
     baseUid?: number | string;
     baseDomain?: string;
     cookieDomain?: string;
+    enablePatch?: boolean;
 }
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to

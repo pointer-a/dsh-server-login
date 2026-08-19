@@ -23,6 +23,7 @@ const app = await buildServer(
     dbPath: ':memory:',
     dataRoot,
     dshCommand: [process.execPath, fakeDsh],
+    enablePatch: true,
     availablePlugins: [
       { id: 'p1', name: 'Plugin One', description: 'first' },
       { id: 'p2', name: 'Plugin Two', description: 'second' },

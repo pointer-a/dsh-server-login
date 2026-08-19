@@ -52,6 +52,8 @@ export interface ServerConfig {
   baseDomain: string
   /** Cookie `Domain` value (e.g. `.example.com`) so the session reaches subdomains; empty = host-only. */
   cookieDomain: string
+  /** Whether to pass `--patch` to child DSHs (needs a dsh CLI that supports it). */
+  enablePatch: boolean
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -72,6 +74,7 @@ export interface ConfigOverrides {
   baseUid?: number | string
   baseDomain?: string
   cookieDomain?: string
+  enablePatch?: boolean
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -95,6 +98,7 @@ const DEFAULT_SPAWN_AS_USER_COMMAND = [
 const DEFAULT_BASE_UID = 100000
 const DEFAULT_BASE_DOMAIN = ''
 const DEFAULT_COOKIE_DOMAIN = ''
+const DEFAULT_ENABLE_PATCH = false
 
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
@@ -152,5 +156,6 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     baseUid: Number(overrides.baseUid ?? process.env.DSH_SERVER_LOGIN_BASE_UID ?? DEFAULT_BASE_UID),
     baseDomain: overrides.baseDomain ?? process.env.DSH_SERVER_LOGIN_BASE_DOMAIN ?? DEFAULT_BASE_DOMAIN,
     cookieDomain: overrides.cookieDomain ?? process.env.DSH_SERVER_LOGIN_COOKIE_DOMAIN ?? DEFAULT_COOKIE_DOMAIN,
+    enablePatch: overrides.enablePatch ?? toBool(process.env.DSH_SERVER_LOGIN_ENABLE_PATCH, DEFAULT_ENABLE_PATCH),
   }
 }

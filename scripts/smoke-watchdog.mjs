@@ -19,7 +19,7 @@ const fakeDsh = join(here, 'fake-dsh.mjs')
 const dataRoot = mkdtempSync(join(tmpdir(), 'dsh-smoke-watchdog-'))
 
 const app = await buildServer(
-  resolveConfig({ port: 0, dbPath: ':memory:', dataRoot, dshCommand: [process.execPath, fakeDsh], restartBackoffMs: 100 }),
+  resolveConfig({ port: 0, dbPath: ':memory:', dataRoot, dshCommand: [process.execPath, fakeDsh], restartBackoffMs: 100, enablePatch: true }),
 )
 await app.listen({ port: 0 })
 const base = `http://127.0.0.1:${app.server.address().port}`

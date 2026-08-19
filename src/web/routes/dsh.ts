@@ -62,14 +62,17 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'not_found' })
     }
 
-    // Per-folder plugin selection → cordis patch. Always written so the child
-    // mounts the runtime plugin (watchdog contract) even with no folder plugins.
-    const workspace = findWorkspaceByPath(app.db, user.id, folder)
-    const enabled = workspace === undefined ? [] : getEnabledPluginIds(app.db, workspace.id)
-    const patchesDir = join(app.config.dataRoot, 'users', user.id, 'patches')
-    mkdirSync(patchesDir, { recursive: true })
-    const patchPath = join(patchesDir, `${workspace?.id ?? 'default'}.yml`)
-    writeFileSync(patchPath, renderPatch(enabled))
+    // Per-folder plugin selection → cordis patch. Only written when the dsh CLI
+    // supports --patch (enablePatch); otherwise the child boots clean without it.
+    let patchPath: string | undefined
+    if (app.config.enablePatch) {
+      const workspace = findWorkspaceByPath(app.db, user.id, folder)
+      const enabled = workspace === undefined ? [] : getEnabledPluginIds(app.db, workspace.id)
+      const patchesDir = join(app.config.dataRoot, 'users', user.id, 'patches')
+      mkdirSync(patchesDir, { recursive: true })
+      patchPath = join(patchesDir, `${workspace?.id ?? 'default'}.yml`)
+      writeFileSync(patchPath, renderPatch(enabled))
+    }
 
     try {
       const instance = await app.supervisor.launch(user.id, folderAbs, patchPath)

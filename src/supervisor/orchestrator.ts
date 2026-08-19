@@ -20,6 +20,10 @@ import { findFreePort, scrubEnv } from './spawn.js'
 export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped'
 export type InstanceRole = 'main' | 'watchdog'
 
+/** Task given to the one-shot headless watchdog so it doesn't error on a
+ * missing task; executes any post-restart command from the handoff path. */
+const WATCHDOG_TASK = 'Read DSH_SERVER_LOGIN_HANDOFF_PATH. If it contains a JSON {"command": ...}, run that command. Then exit.'
+
 /** A tracked child DSH (main or watchdog). */
 export interface Instance {
   id: string
@@ -75,6 +79,7 @@ export class Supervisor {
 
   /** Spawn a one-shot watchdog for the user's current main (repair / execute). */
   async spawnWatchdog(userId: string): Promise<Instance | undefined> {
+    if (!this.config.enablePatch) return undefined // watchdog needs the runtime patch
     if (this.watchdogs.has(userId)) return this.watchdogs.get(userId)
     const main = this.mains.get(userId)
     if (main === undefined) return undefined
@@ -141,8 +146,14 @@ export class Supervisor {
 
     const [command = 'dsh', ...args] = this.config.dshCommand
     const launchArgs = ['--profile', role === 'main' ? 'web' : 'headless']
-    if (role === 'main') launchArgs.push('--host', '127.0.0.1', '--port', String(port))
-    if (role === 'main' && patchPath !== undefined) launchArgs.push('--patch', patchPath)
+    if (role === 'main') {
+      launchArgs.push('--host', '127.0.0.1', '--port', String(port))
+      // --patch needs a dsh CLI that supports it; off by default so the child
+      // boots even on older dsh versions.
+      if (this.config.enablePatch && patchPath !== undefined) launchArgs.push('--patch', patchPath)
+    } else {
+      launchArgs.push(WATCHDOG_TASK)
+    }
 
     const env: Record<string, string> = {
       ...this.baseEnv(userId),
