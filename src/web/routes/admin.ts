@@ -33,4 +33,14 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     audit(app.db, request.user?.id ?? null, 'disable', JSON.stringify({ userId: id }))
     return { ok: true }
   })
+
+  app.post('/api/admin/users/:id/enable', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const user = findUserById(app.db, id)
+    if (user === undefined) return reply.code(404).send({ error: 'not_found' })
+    if (user.role !== 'disabled') return reply.code(409).send({ error: 'not_disabled' })
+    setUserRole(app.db, id, 'active', request.user?.id)
+    audit(app.db, request.user?.id ?? null, 'enable', JSON.stringify({ userId: id }))
+    return { ok: true }
+  })
 }
