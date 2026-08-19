@@ -23,6 +23,7 @@
     "dev": "node lib/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:admin": "node scripts/smoke-admin.mjs",
     "smoke:auth": "node scripts/smoke-auth.mjs",
     "smoke:fs": "node scripts/smoke-fs.mjs",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
