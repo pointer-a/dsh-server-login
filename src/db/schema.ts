@@ -89,13 +89,21 @@ CREATE TABLE IF NOT EXISTS credential_vault (
 );
 `
 
+/** v2: named per-user credential keys with an enabled flag. */
+const V2_SCHEMA = `
+ALTER TABLE credential_vault ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0;
+`
+
 interface Migration {
   version: number
   name: string
   sql: string
 }
 
-const MIGRATIONS: readonly Migration[] = [{ version: 1, name: 'initial schema', sql: V1_SCHEMA }]
+const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: 'initial schema', sql: V1_SCHEMA },
+  { version: 2, name: 'credential vault enabled flag', sql: V2_SCHEMA },
+]
 
 /** Apply any unapplied migrations inside a single transaction. */
 export function runMigrations(db: Database): void {

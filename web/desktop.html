@@ -96,6 +96,7 @@
           <button class="btn ghost hidden" id="stopBtn">停止</button>
           <button class="btn ghost hidden" id="openDshBtn">打开 DSH ↗</button>
           <button class="btn ghost" id="managePluginsBtn">管理插件</button>
+          <button class="btn ghost" id="manageKeysBtn">管理密钥</button>
         </div>
         <div class="section-label">在此文件夹启动：<span id="dshFolder">根目录</span></div>
         <div class="hidden" id="pluginPanel">
@@ -103,12 +104,16 @@
           <div id="pluginList"></div>
           <button class="btn primary small" id="savePluginsBtn" style="margin-top:10px">保存插件选择</button>
         </div>
-        <div class="section-label">我的 DeepSeek API 密钥（仅用于你启动的 DSH）</div>
-        <div class="row-actions">
-          <input id="apiKeyInput" type="password" placeholder="sk-..." autocomplete="off" style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:14px;color:var(--ink)" />
-          <button class="btn primary" id="saveKeyBtn">保存</button>
+        <div class="hidden" id="keyPanel">
+          <div class="section-label">我的 API 密钥（选中的用于你的 DSH）</div>
+          <div id="keyList"></div>
+          <div class="section-label">新增密钥</div>
+          <div class="row-actions">
+            <input id="keyNameInput" placeholder="名称（如 家用 / 服务器）" autocomplete="off" style="flex:1;min-width:90px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:13px;color:var(--ink)" />
+            <input id="keyValueInput" type="password" placeholder="sk-..." autocomplete="off" style="flex:1.4;min-width:130px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:13px;color:var(--ink)" />
+            <button class="btn primary small" id="addKeyBtn">添加</button>
+          </div>
         </div>
-        <div id="apiKeyStatus" style="font-size:12px;color:var(--ink-soft);margin-top:6px"></div>
       </div>
       <div class="resize" title="拖动缩放"></div>
     </div>
@@ -379,21 +384,50 @@
       })
       document.getElementById('stopBtn').addEventListener('click', async () => { await fetch('/api/dsh/stop', { method: 'POST' }); await refreshDsh() })
 
-      // API key
-      async function refreshKeyStatus() {
-        const res = await fetch('/api/me/key')
+      // API key vault
+      async function loadKeys() {
+        const res = await fetch('/api/me/keys')
         if (!res.ok) return
-        const { hasKey } = await res.json()
-        document.getElementById('apiKeyStatus').textContent = hasKey ? '✓ 已设置' : '未设置（你的 DSH 将无法调用模型）'
+        const { keys } = await res.json()
+        const list = document.getElementById('keyList')
+        list.innerHTML = ''
+        if (keys.length === 0) {
+          list.innerHTML = '<p style="font-size:13px;color:var(--ink-soft)">暂无密钥。添加后你的 DSH 才能调用模型。</p>'
+        }
+        for (const k of keys) {
+          const row = document.createElement('div')
+          row.className = 'plugin-item'
+          const dot = `<span class="dot ${k.enabled ? 'on' : 'off'}"></span>`
+          const act = k.enabled
+            ? '<span style="font-size:12px;color:var(--ok)">启用中</span>'
+            : `<button class="btn small ghost" data-sel="${k.id}">启用</button>`
+          row.innerHTML = `${dot} <strong>${k.name}</strong> <span style="flex:1"></span> ${act} <button class="btn small danger" data-del="${k.id}" style="margin-left:6px">删除</button>`
+          list.appendChild(row)
+        }
+        list.querySelectorAll('[data-sel]').forEach((b) => b.addEventListener('click', async () => {
+          await fetch(`/api/me/keys/${b.dataset.sel}/select`, { method: 'POST' })
+          await loadKeys()
+        }))
+        list.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+          if (!confirm('删除这个密钥？')) return
+          await fetch(`/api/me/keys/${b.dataset.del}`, { method: 'DELETE' })
+          await loadKeys()
+        }))
       }
-      document.getElementById('saveKeyBtn').addEventListener('click', async () => {
-        const apiKey = document.getElementById('apiKeyInput').value.trim()
-        if (!apiKey) { alert('请输入 API 密钥'); return }
-        const res = await fetch('/api/me/key', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKey }) })
-        if (!res.ok) { alert('密钥格式无效（只能含字母数字 - _ .）'); return }
-        document.getElementById('apiKeyInput').value = ''
-        await refreshKeyStatus()
-        alert('已保存')
+      document.getElementById('manageKeysBtn').addEventListener('click', async () => {
+        const panel = document.getElementById('keyPanel')
+        panel.classList.toggle('hidden')
+        if (!panel.classList.contains('hidden')) await loadKeys()
+      })
+      document.getElementById('addKeyBtn').addEventListener('click', async () => {
+        const name = document.getElementById('keyNameInput').value.trim()
+        const apiKey = document.getElementById('keyValueInput').value.trim()
+        if (!name || !apiKey) { alert('请填名称和密钥'); return }
+        const res = await fetch('/api/me/keys', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, apiKey }) })
+        if (!res.ok) { alert('名称或密钥格式无效'); return }
+        document.getElementById('keyNameInput').value = ''
+        document.getElementById('keyValueInput').value = ''
+        await loadKeys()
       })
 
       let pluginCatalog = []
@@ -467,7 +501,6 @@
         }
         await syncAll()
         await refreshDsh()
-        await refreshKeyStatus()
       })()
     </script>
   </body>

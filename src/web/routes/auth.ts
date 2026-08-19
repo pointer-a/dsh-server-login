@@ -14,10 +14,12 @@ import {
   audit,
   createSession,
   createUser,
+  deleteCredentialKey,
   deleteSession,
   findUserByUsername,
-  getUserApiKeyRef,
-  setUserApiKeyRef,
+  listCredentialKeys,
+  selectCredentialKey,
+  setCredentialKey,
   toPublicUser,
 } from '../../db/repo.js'
 import {
@@ -119,27 +121,46 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (request) => ({ user: request.user }))
 
-  const keySchema = {
+  const keyAddSchema = {
     body: {
       type: 'object',
-      required: ['apiKey'],
+      required: ['name', 'apiKey'],
       additionalProperties: false,
-      properties: { apiKey: { type: 'string', minLength: 1, maxLength: 256 } },
+      properties: {
+        name: { type: 'string', minLength: 1, maxLength: 32 },
+        apiKey: { type: 'string', minLength: 1, maxLength: 256 },
+      },
     },
   } as const
 
-  app.get('/api/me/key', { preHandler: requireAuth }, async (request) => ({
-    hasKey: getUserApiKeyRef(app.db, request.user!.id) !== null,
+  app.get('/api/me/keys', { preHandler: requireAuth }, async (request) => ({
+    keys: listCredentialKeys(app.db, request.user!.id),
   }))
 
-  app.put('/api/me/key', { preHandler: requireAuth, schema: keySchema }, async (request, reply) => {
-    const { apiKey } = request.body as { apiKey: string }
+  app.post('/api/me/keys', { preHandler: requireAuth, schema: keyAddSchema }, async (request, reply) => {
+    const { name, apiKey } = request.body as { name: string; apiKey: string }
+    const cleanName = name.trim()
+    if (!/^[A-Za-z0-9\-_ .]{1,32}$/.test(cleanName)) {
+      return reply.code(400).send({ error: 'invalid_name' })
+    }
     // Header-safe charset only: reject spaces, quotes, non-ASCII, etc.
     if (!/^[A-Za-z0-9\-_.]{1,256}$/.test(apiKey)) {
       return reply.code(400).send({ error: 'invalid_api_key' })
     }
-    setUserApiKeyRef(app.db, request.user!.id, encrypt(apiKey, deriveKey(app.config.encryptionSecret)))
-    audit(app.db, request.user!.id, 'set_api_key', null)
+    const key = setCredentialKey(app.db, request.user!.id, cleanName, encrypt(apiKey, deriveKey(app.config.encryptionSecret)))
+    audit(app.db, request.user!.id, 'set_api_key', JSON.stringify({ name: cleanName }))
+    return { key }
+  })
+
+  app.post('/api/me/keys/:id/select', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (!selectCredentialKey(app.db, request.user!.id, id)) return reply.code(404).send({ error: 'not_found' })
+    return { ok: true }
+  })
+
+  app.delete('/api/me/keys/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (!deleteCredentialKey(app.db, request.user!.id, id)) return reply.code(404).send({ error: 'not_found' })
     return { ok: true }
   })
 }

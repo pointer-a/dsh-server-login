@@ -292,16 +292,71 @@ export function upsertDomain(db: Database, userId: string, domain: string, nginx
   return findDomainByUser(db, userId)!
 }
 
-/** Store a user's encrypted API-key ref. Returns whether a row was updated. */
-export function setUserApiKeyRef(db: Database, userId: string, encryptedRef: string | null): boolean {
-  const info = prepare(db, 'UPDATE users SET api_key_ref = ? WHERE id = ?').run(encryptedRef, userId)
-  return info.changes > 0
+/** A named per-user credential key (secret never exposed). */
+export interface CredentialKey {
+  id: string
+  name: string
+  enabled: boolean
+  updatedAt: number
 }
 
-/** Read a user's encrypted API-key ref (decrypt with the deployment secret). */
-export function getUserApiKeyRef(db: Database, userId: string): string | null {
-  const row = prepare(db, 'SELECT api_key_ref FROM users WHERE id = ?').get(userId) as { api_key_ref: string | null } | undefined
-  return row?.api_key_ref ?? null
+/** List a user's named credential keys (metadata only). */
+export function listCredentialKeys(db: Database, userId: string): CredentialKey[] {
+  const rows = prepare(
+    db,
+    'SELECT id, key_name, enabled, updated_at FROM credential_vault WHERE user_id = ? ORDER BY updated_at DESC',
+  ).all(userId) as Array<{ id: string; key_name: string; enabled: number; updated_at: number }>
+  return rows.map((r) => ({ id: r.id, name: r.key_name, enabled: r.enabled === 1, updatedAt: r.updated_at }))
+}
+
+/** The enabled key's encrypted ref for a user (decrypt with the deployment secret). */
+export function getEnabledCredentialKeyRef(db: Database, userId: string): string | null {
+  const row = prepare(db, 'SELECT secret_ref FROM credential_vault WHERE user_id = ? AND enabled = 1').get(userId) as
+    | { secret_ref: string }
+    | undefined
+  return row?.secret_ref ?? null
+}
+
+/** Upsert a named key, disable the others, and enable this one. */
+export function setCredentialKey(db: Database, userId: string, name: string, encryptedRef: string): CredentialKey {
+  const id = db.transaction(() => {
+    prepare(db, 'UPDATE credential_vault SET enabled = 0 WHERE user_id = ?').run(userId)
+    const existing = prepare(db, 'SELECT id FROM credential_vault WHERE user_id = ? AND key_name = ?').get(
+      userId,
+      name,
+    ) as { id: string } | undefined
+    if (existing !== undefined) {
+      prepare(db, 'UPDATE credential_vault SET secret_ref = ?, enabled = 1, updated_at = ? WHERE id = ?').run(
+        encryptedRef,
+        Date.now(),
+        existing.id,
+      )
+      return existing.id
+    }
+    const id = randomUUID()
+    prepare(
+      db,
+      'INSERT INTO credential_vault (id, user_id, key_name, secret_ref, enabled, updated_at) VALUES (?, ?, ?, ?, 1, ?)',
+    ).run(id, userId, name, encryptedRef, Date.now())
+    return id
+  })()
+  return { id, name, enabled: true, updatedAt: Date.now() }
+}
+
+/** Enable one of a user's named keys (disabling the others). */
+export function selectCredentialKey(db: Database, userId: string, id: string): boolean {
+  const ok = db.transaction(() => {
+    prepare(db, 'UPDATE credential_vault SET enabled = 0 WHERE user_id = ?').run(userId)
+    const info = prepare(db, 'UPDATE credential_vault SET enabled = 1 WHERE id = ? AND user_id = ?').run(id, userId)
+    return info.changes > 0
+  })()
+  return ok as boolean
+}
+
+/** Delete a named key (by id, scoped to the user). */
+export function deleteCredentialKey(db: Database, userId: string, id: string): boolean {
+  const info = prepare(db, 'DELETE FROM credential_vault WHERE id = ? AND user_id = ?').run(id, userId)
+  return info.changes > 0
 }
 
 /** Set the verified flag on a domain. */

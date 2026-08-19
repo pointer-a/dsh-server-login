@@ -95,10 +95,23 @@ export declare function findDomainById(db: Database, id: string): Domain | undef
 export declare function listDomains(db: Database): Domain[];
 /** Upsert a user's custom domain (resetting `verified` to 0). */
 export declare function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain;
-/** Store a user's encrypted API-key ref. Returns whether a row was updated. */
-export declare function setUserApiKeyRef(db: Database, userId: string, encryptedRef: string | null): boolean;
-/** Read a user's encrypted API-key ref (decrypt with the deployment secret). */
-export declare function getUserApiKeyRef(db: Database, userId: string): string | null;
+/** A named per-user credential key (secret never exposed). */
+export interface CredentialKey {
+    id: string;
+    name: string;
+    enabled: boolean;
+    updatedAt: number;
+}
+/** List a user's named credential keys (metadata only). */
+export declare function listCredentialKeys(db: Database, userId: string): CredentialKey[];
+/** The enabled key's encrypted ref for a user (decrypt with the deployment secret). */
+export declare function getEnabledCredentialKeyRef(db: Database, userId: string): string | null;
+/** Upsert a named key, disable the others, and enable this one. */
+export declare function setCredentialKey(db: Database, userId: string, name: string, encryptedRef: string): CredentialKey;
+/** Enable one of a user's named keys (disabling the others). */
+export declare function selectCredentialKey(db: Database, userId: string, id: string): boolean;
+/** Delete a named key (by id, scoped to the user). */
+export declare function deleteCredentialKey(db: Database, userId: string, id: string): boolean;
 /** Set the verified flag on a domain. */
 export declare function setDomainVerified(db: Database, id: string, verified: boolean): boolean;
 /** A session joined with its user, for the authn hot path (one query). */

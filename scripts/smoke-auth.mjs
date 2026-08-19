@@ -71,20 +71,38 @@ r = await json('/api/auth/me', { cookie: aliceCookie })
 console.log('me (alice)              ->', r.status, r.body?.user)
 assert(r.status === 200 && r.body.user.username === 'alice', '/me returns the current user')
 
-r = await json('/api/me/key', { cookie: aliceCookie })
-console.log('key (none)              ->', r.status, r.body)
-assert(r.body?.hasKey === false, 'no key initially')
+r = await json('/api/me/keys', { cookie: aliceCookie })
+console.log('keys (none)             ->', r.status, r.body)
+assert(r.status === 200 && r.body.keys.length === 0, 'no keys initially')
 
-r = await json('/api/me/key', { method: 'PUT', cookie: aliceCookie, body: { apiKey: 'sk-good1-abc' } })
-console.log('key (set)               ->', r.status)
-assert(r.status === 200, 'key is stored')
+r = await json('/api/me/keys', { method: 'POST', cookie: aliceCookie, body: { name: 'home', apiKey: 'sk-good1-abc' } })
+console.log('keys (add home)         ->', r.status, r.body?.key)
+assert(r.status === 200 && r.body.key.enabled === true, 'first key added + enabled')
+const firstKeyId = r.body.key.id
 
-r = await json('/api/me/key', { cookie: aliceCookie })
-assert(r.body?.hasKey === true, 'hasKey true after setting')
+r = await json('/api/me/keys', { method: 'POST', cookie: aliceCookie, body: { name: 'server', apiKey: 'sk-good2-xyz' } })
+console.log('keys (add server)       ->', r.status, r.body?.key)
+assert(r.status === 200 && r.body.key.enabled === true, 'second key added + enabled')
 
-r = await json('/api/me/key', { method: 'PUT', cookie: aliceCookie, body: { apiKey: 'bad key with space' } })
-console.log('key (bad charset)       ->', r.status)
+r = await json('/api/me/keys', { cookie: aliceCookie })
+console.log('keys (list)             ->', r.status, r.body?.keys?.map((k) => `${k.name}:${k.enabled}`))
+assert(r.body.keys.length === 2 && r.body.keys.find((k) => k.name === 'server').enabled === true, 'two keys, server enabled')
+
+r = await json(`/api/me/keys/${firstKeyId}/select`, { method: 'POST', cookie: aliceCookie })
+assert(r.status === 200, 're-select first key')
+
+r = await json('/api/me/keys', { cookie: aliceCookie })
+assert(r.body.keys.find((k) => k.name === 'home').enabled === true, 'home enabled after select')
+
+r = await json('/api/me/keys', { method: 'POST', cookie: aliceCookie, body: { name: 'bad', apiKey: 'bad key with space' } })
+console.log('keys (bad charset)      ->', r.status)
 assert(r.status === 400, 'header-hostile key is rejected')
 
+r = await json(`/api/me/keys/${firstKeyId}`, { method: 'DELETE', cookie: aliceCookie })
+assert(r.status === 200, 'key deleted')
+
+r = await json('/api/me/keys', { cookie: aliceCookie })
+assert(r.body.keys.length === 1, 'one key left after delete')
+
 await app.close()
-console.log('OK: full auth + review + per-user key flow passed')
+console.log('OK: full auth + review + key vault flow passed')

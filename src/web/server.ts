@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { openDatabase, type Database } from '../db/connection.js'
-import { getUserApiKeyRef, type PublicUser } from '../db/repo.js'
+import { getEnabledCredentialKeyRef, type PublicUser } from '../db/repo.js'
 import { decrypt, deriveKey } from '../crypto.js'
 import { Supervisor } from '../supervisor/orchestrator.js'
 import { registerDshProxy } from '../supervisor/proxy.js'
@@ -44,7 +44,7 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
   const db = openDatabase(config.dbPath)
   const encryptionKey = deriveKey(config.encryptionSecret)
   const supervisor = new Supervisor(config, (userId) => {
-    const ref = getUserApiKeyRef(db, userId)
+    const ref = getEnabledCredentialKeyRef(db, userId)
     if (ref === null) return null
     try {
       return decrypt(ref, encryptionKey)

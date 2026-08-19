@@ -155,7 +155,7 @@ EOF
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `true` | 走 HTTPS，cookie 必须标 `Secure`。 |
 | `DSH_SERVER_LOGIN_DSH_BIN` | `/root/.nvm/versions/node/v22.23.2/bin/dsh` | 编排服务用它启动每个用户的 DSH。**用绝对路径**，别写 `dsh`——systemd 的 PATH 找不到（否则报 `spawn dsh ENOENT`）。版本号按你实际 nvm 版本改：`ls ~/.nvm/versions/node/`。 |
 
-> 🔑 **API 密钥是每用户自己的**：不再在环境变量里配平台 key。每个用户登录后，在桌面 → DSH 窗口里填自己的 DeepSeek API 密钥（加密存在该用户自己的数据里），spawn 时只注入他自己的 key。未设置 key 的用户，其 DSH 能启动但无法调用模型。
+> 🔑 **API 密钥是每用户自己的密钥库**：不再在环境变量里配平台 key。每个用户登录后，在桌面 → DSH 窗口点「**管理密钥**」（在「管理插件」旁）添加多个**命名的**密钥（AES-256-GCM 加密存在该用户自己的数据里），并可**选择启用哪一个**；spawn 时只注入该用户当前启用的 key。未设置 key 的用户，其 DSH 能启动但无法调用模型。
 
 ### 6.1 先手动跑一次（验证能起来）
 
