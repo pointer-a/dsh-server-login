@@ -4,135 +4,85 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>管理台 — dsh-server-login</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
-      table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-      th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #8884; }
-      .hidden { display: none; }
-      .badge { padding: 0.1rem 0.5rem; border-radius: 1rem; font-size: 0.8rem; }
-      .badge.pending { background: #f39c12; color: #111; }
-      .badge.active { background: #27ae60; color: #fff; }
-      .badge.disabled { background: #888; color: #fff; }
-      .badge.admin { background: #2980b9; color: #fff; }
-      #login { max-width: 20rem; }
-      #login label { display: block; margin-top: 0.75rem; }
-      #login input, #login button { width: 100%; padding: 0.5rem; box-sizing: border-box; margin-top: 0.25rem; }
-      #loginMsg { color: #c0392b; }
-      button.small { padding: 0.2rem 0.6rem; }
-    </style>
+    <link rel="stylesheet" href="/design.css" />
   </head>
-  <body>
-    <h1>管理台</h1>
+  <body class="auth-bg">
+    <div class="auth-card" style="max-width: 720px">
+      <div class="auth-brand">
+        <img class="logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234d7cfe'/%3E%3Cpath d='M8 9h16l-9 7 9 7H8z' fill='%23fff'/%3E%3C/svg%3E" alt="logo" />
+        <h1>管理台</h1>
+      </div>
+      <p class="auth-sub" id="sub">仅限管理员</p>
 
-    <div id="login" class="hidden">
-      <h2>管理员登录</h2>
-      <label for="username">用户名</label>
-      <input id="username" autocomplete="username" />
-      <label for="password">密码</label>
-      <input id="password" type="password" autocomplete="current-password" />
-      <button id="loginBtn">登录</button>
-      <p id="loginMsg"></p>
-    </div>
+      <div id="login" class="hidden">
+        <div class="field"><label>用户名</label><input id="username" autocomplete="username" /></div>
+        <div class="field"><label>密码</label><input id="password" type="password" autocomplete="current-password" /></div>
+        <button class="btn primary" id="loginBtn">登录</button>
+        <p class="msg err" id="loginMsg"></p>
+      </div>
 
-    <div id="console" class="hidden">
-      <p>
-        登录为 <strong id="who"></strong>
-        <button id="logoutBtn" class="small">退出</button>
-      </p>
-      <table id="users">
-        <thead>
-          <tr><th>用户名</th><th>角色</th><th>注册时间</th><th>操作</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <div id="console" class="hidden">
+        <div class="row-actions" style="justify-content:space-between">
+          <span>登录为 <strong id="who"></strong></span>
+          <button class="btn ghost small" id="logoutBtn">退出</button>
+        </div>
+        <table class="admin">
+          <thead><tr><th>用户名</th><th>角色</th><th>注册时间</th><th>操作</th></tr></thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
     </div>
 
     <script>
-      const login = document.getElementById('login')
-      const consoleEl = document.getElementById('console')
-
+      const badge = { admin: '管理员', pending: '待审核', active: '正常', disabled: '已禁用' }
       async function me() {
         const res = await fetch('/api/auth/me')
-        if (!res.ok) return null
-        const body = await res.json()
-        return body.user
+        return res.ok ? (await res.json()).user : null
       }
-
-      function roleBadge(role) {
-        const label = { admin: '管理员', pending: '待审核', active: '正常', disabled: '已禁用' }[role] || role
-        return `<span class="badge ${role}">${label}</span>`
-      }
-
       async function loadUsers() {
-        const res = await fetch('/api/admin/users')
-        const { users } = await res.json()
-        const tbody = document.querySelector('#users tbody')
+        const { users } = await (await fetch('/api/admin/users')).json()
+        const tbody = document.getElementById('users')
         tbody.innerHTML = ''
-        for (const user of users) {
-          const tr = document.createElement('tr')
-          const actions =
-            user.role === 'pending'
-              ? `<button class="small" data-act="approve" data-id="${user.id}">通过</button>`
-              : user.role === 'active'
-                ? `<button class="small" data-act="disable" data-id="${user.id}">禁用</button>`
-                : ''
-          tr.innerHTML = `<td>${user.username}</td><td>${roleBadge(user.role)}</td><td>${new Date(
-            user.createdAt,
-          ).toLocaleString()}</td><td>${actions}</td>`
-          tbody.appendChild(tr)
+        for (const u of users) {
+          const actions = u.role === 'pending'
+            ? `<button class="btn small ghost" data-act="approve" data-id="${u.id}">通过</button>`
+            : u.role === 'active' ? `<button class="btn small danger" data-act="disable" data-id="${u.id}">禁用</button>` : ''
+          tbody.insertAdjacentHTML('beforeend', `<tr><td>${u.username}</td><td><span class="badge ${u.role}">${badge[u.role] || u.role}</span></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${actions}</td></tr>`)
         }
-        tbody.addEventListener('click', async (event) => {
+        tbody.onclick = async (event) => {
           const btn = event.target.closest('button[data-act]')
           if (!btn) return
           const { act, id } = btn.dataset
           const res = await fetch(`/api/admin/users/${id}/${act}`, { method: 'POST' })
           if (res.ok) await loadUsers()
-          else alert(`操作失败：${(await res.json().catch(() => ({}))).error || 'unknown'}`)
-        })
+          else alert('操作失败')
+        }
       }
-
+      async function init() {
+        const u = await me()
+        if (u && u.role === 'admin') {
+          document.getElementById('login').classList.add('hidden')
+          document.getElementById('console').classList.remove('hidden')
+          document.getElementById('who').textContent = u.username
+          await loadUsers()
+        } else if (u) {
+          document.getElementById('sub').textContent = '该账号不是管理员'
+        } else {
+          document.getElementById('login').classList.remove('hidden')
+        }
+      }
       document.getElementById('loginBtn').addEventListener('click', async () => {
-        const msg = document.getElementById('loginMsg')
-        msg.textContent = ''
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            username: document.getElementById('username').value,
-            password: document.getElementById('password').value,
-          }),
+          body: JSON.stringify({ username: document.getElementById('username').value, password: document.getElementById('password').value }),
         })
-        if (!res.ok) {
-          msg.textContent = '用户名或密码错误'
-          return
-        }
+        if (!res.ok) { document.getElementById('loginMsg').textContent = '用户名或密码错误'; return }
         const { user } = await res.json()
-        if (user.role !== 'admin') {
-          msg.textContent = '该账号不是管理员'
-          return
-        }
+        if (user.role !== 'admin') { document.getElementById('loginMsg').textContent = '该账号不是管理员'; return }
         await init()
       })
-
-      document.getElementById('logoutBtn').addEventListener('click', async () => {
-        await fetch('/api/auth/logout', { method: 'POST' })
-        location.reload()
-      })
-
-      async function init() {
-        const user = await me()
-        if (!user || user.role !== 'admin') {
-          login.classList.remove('hidden')
-          consoleEl.classList.add('hidden')
-          return
-        }
-        login.classList.add('hidden')
-        consoleEl.classList.remove('hidden')
-        document.getElementById('who').textContent = user.username
-        await loadUsers()
-      }
-
+      document.getElementById('logoutBtn').addEventListener('click', async () => { await fetch('/api/auth/logout', { method: 'POST' }); location.reload() })
       init()
     </script>
   </body>

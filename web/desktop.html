@@ -4,143 +4,161 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>桌面 — dsh-server-login</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 2rem auto; padding: 0 1rem; }
-      .bar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; }
-      table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-      th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #8884; }
-      .dir { cursor: pointer; color: #2980b9; }
-      .dir:hover { text-decoration: underline; }
-      .hidden { display: none; }
-      button { padding: 0.3rem 0.7rem; }
-    </style>
+    <link rel="stylesheet" href="/design.css" />
   </head>
   <body>
-    <h1>桌面</h1>
-    <div class="bar">
-      <span>登录为 <strong id="who"></strong></span>
-      <button id="logoutBtn">退出</button>
-      <button id="newFolderBtn">新建文件夹</button>
-      <button id="uploadBtn">上传文件</button>
-      <input id="fileInput" type="file" class="hidden" />
-    </div>
-    <div class="bar">
-      路径：
-      <span id="breadcrumb"></span>
-    </div>
-    <div class="bar">
-      <button id="launchBtn">在此文件夹启动 DSH</button>
-      <button id="stopBtn" class="hidden">停止 DSH</button>
-      <span id="dshStatus">未运行</span>
-      <a id="dshLink" class="hidden" target="_blank" rel="noopener">打开 DSH</a>
-      <button id="managePluginsBtn">管理插件</button>
-    </div>
-    <table>
-      <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
+    <div class="desktop">
+      <div class="wallpaper"></div>
 
-    <div id="pluginPanel" class="hidden" style="margin:1rem 0; padding:1rem; border:1px solid #8884;">
-      <h3>当前文件夹的插件</h3>
-      <div id="pluginList"></div>
-      <button id="savePluginsBtn" style="margin-top:0.75rem;">保存插件选择</button>
+      <div class="topbar">
+        <div class="brand">
+          <img class="logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234d7cfe'/%3E%3Cpath d='M8 9h16l-9 7 9 7H8z' fill='%23fff'/%3E%3C/svg%3E" alt="logo" />
+          <span>dsh-server-login</span>
+        </div>
+        <div class="right">
+          <span class="role hidden" id="roleBadge"></span>
+          <span class="who" id="who"></span>
+          <button class="btn ghost small logout" id="logoutBtn">退出</button>
+        </div>
+      </div>
+
+      <div class="icons">
+        <div class="desk-icon" data-open="dsh">
+          <div class="tile dsh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>
+          </div>
+          <span class="label">DSH</span>
+        </div>
+        <div class="desk-icon" data-open="files">
+          <div class="tile files">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </div>
+          <span class="label">我的文件</span>
+        </div>
+        <div class="desk-icon hidden" id="adminIcon" data-open="admin">
+          <div class="tile admin">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <span class="label">管理台</span>
+        </div>
+      </div>
+
+      <div class="taskbar">
+        <div class="app" data-open="dsh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="app" data-open="files">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </div>
+        <div class="app hidden" id="adminTask" data-open="admin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#cfe0ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/></svg>
+        </div>
+        <span class="clock" id="clock"></span>
+      </div>
     </div>
 
     <script>
-      let currentPath = [] // array of path segments; [] = root
-
-      const rows = document.getElementById('rows')
-      const breadcrumb = document.getElementById('breadcrumb')
-
+      // ---------- session ----------
+      let user = null
       async function me() {
         const res = await fetch('/api/auth/me')
         if (!res.ok) return null
         return (await res.json()).user
       }
 
-      function fmtSize(bytes) {
-        if (bytes === 0) return '—'
-        const units = ['B', 'KB', 'MB', 'GB']
-        let i = 0
-        let n = bytes
-        while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
-        return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
-      }
-
-      function pathString() {
-        return currentPath.join('/')
-      }
-
-      function renderBreadcrumb() {
-        const parts = ['<span class="dir" data-path="">根</span>']
-        let acc = []
-        for (const seg of currentPath) {
-          acc.push(seg)
-          const p = acc.join('/')
-          parts.push(` / <span class="dir" data-path="${p}">${seg}</span>`)
+      // ---------- window manager ----------
+      const zTop = { n: 10 }
+      function openWindow(id) {
+        const win = document.getElementById('win-' + id)
+        if (win.classList.contains('hidden')) {
+          win.classList.remove('hidden')
+          positionWindow(win)
         }
-        breadcrumb.innerHTML = parts.join('')
-        breadcrumb.querySelectorAll('.dir').forEach((el) => el.addEventListener('click', () => {
-          navigate(el.dataset.path)
-        }))
+        focusWindow(win)
       }
+      function closeWindow(id) {
+        document.getElementById('win-' + id).classList.add('hidden')
+      }
+      function focusWindow(win) {
+        document.querySelectorAll('.window').forEach((w) => w.classList.remove('focused'))
+        win.classList.add('focused')
+        win.style.zIndex = ++zTop.n
+      }
+      function positionWindow(win) {
+        if (win.dataset.placed) return
+        win.dataset.placed = '1'
+        win.style.left = Math.round((innerWidth - 620) / 2 + (Math.random() * 40 - 20)) + 'px'
+        win.style.top = Math.round((innerHeight - 460) / 2 + (Math.random() * 40 - 20)) + 'px'
+      }
+      // drag by title bar
+      document.querySelectorAll('.window-title').forEach((bar) => {
+        bar.addEventListener('pointerdown', (e) => {
+          const win = bar.closest('.window')
+          focusWindow(win)
+          if (e.target.closest('button')) return
+          const startX = e.clientX, startY = e.clientY
+          const left = win.offsetLeft, top = win.offsetTop
+          const move = (ev) => { win.style.left = left + (ev.clientX - startX) + 'px'; win.style.top = top + (ev.clientY - startY) + 'px' }
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+          window.addEventListener('pointermove', move)
+          window.addEventListener('pointerup', up)
+        })
+      })
+      document.querySelectorAll('.window').forEach((w) => w.addEventListener('pointerdown', () => focusWindow(w)))
 
+      // open from icons + taskbar
+      document.querySelectorAll('[data-open]').forEach((el) =>
+        el.addEventListener('click', () => openWindow(el.dataset.open)))
+
+      // ---------- files window ----------
+      let currentPath = []
+      const rows = document.getElementById('rows')
+      const breadcrumb = document.getElementById('breadcrumb')
+      function pathString() { return currentPath.join('/') }
+      function fmtSize(bytes) {
+        if (!bytes) return '—'
+        const u = ['B', 'KB', 'MB', 'GB']; let i = 0, n = bytes
+        while (n >= 1024 && i < u.length - 1) { n /= 1024; i++ }
+        return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`
+      }
+      function renderBreadcrumb() {
+        const parts = ['<span class="crumb" data-path="">根</span>']
+        let acc = []
+        for (const seg of currentPath) { acc.push(seg); parts.push('<span class="sep">/</span><span class="crumb" data-path="' + acc.join('/') + '">' + seg + '</span>') }
+        breadcrumb.innerHTML = parts.join('')
+        breadcrumb.querySelectorAll('.crumb').forEach((c) => c.addEventListener('click', () => navigate(c.dataset.path)))
+      }
       async function navigate(path) {
         currentPath = path ? path.split('/').filter(Boolean) : []
+        document.getElementById('dshFolder').textContent = pathString() || '根目录'
         await load()
       }
-
       async function load() {
-        const path = pathString()
-        const res = await fetch('/api/desktop/tree' + (path ? `?path=${encodeURIComponent(path)}` : ''))
+        const p = pathString()
+        const res = await fetch('/api/desktop/tree' + (p ? '?path=' + encodeURIComponent(p) : ''))
         const body = await res.json()
         rows.innerHTML = ''
-        if (path) {
-          rows.insertAdjacentHTML('beforeend', `<tr><td class="dir" data-up="1">..</td><td></td><td></td><td></td></tr>`)
-        }
-        for (const entry of body.entries || []) {
-          const typeLabel = entry.type === 'dir' ? '文件夹' : '文件'
-          const nameCell = entry.type === 'dir'
-            ? `<span class="dir" data-path="${encodeURIComponent(path ? path + '/' + entry.name : entry.name)}">${entry.name}</span>`
-            : entry.name
-          rows.insertAdjacentHTML(
-            'beforeend',
-            `<tr><td>${nameCell}</td><td>${typeLabel}</td><td>${fmtSize(entry.size)}</td><td>${new Date(
-              entry.mtimeMs,
-            ).toLocaleString()}</td></tr>`,
-          )
+        if (p) rows.insertAdjacentHTML('beforeend', '<tr><td class="dir" data-up="1">..</td><td></td><td></td><td></td></tr>')
+        for (const e of body.entries || []) {
+          const href = e.type === 'dir' ? ' class="dir" data-path="' + encodeURIComponent(p ? p + '/' + e.name : e.name) + '"' : ''
+          rows.insertAdjacentHTML('beforeend', `<tr><td${href}>${e.name}</td><td>${e.type === 'dir' ? '文件夹' : '文件'}</td><td>${fmtSize(e.size)}</td><td>${new Date(e.mtimeMs).toLocaleString()}</td></tr>`)
         }
         renderBreadcrumb()
-        rows.querySelectorAll('.dir[data-path]').forEach((el) =>
-          el.addEventListener('click', () => navigate(decodeURIComponent(el.dataset.path))),
-        )
+        rows.querySelectorAll('.dir[data-path]').forEach((el) => el.addEventListener('click', () => navigate(decodeURIComponent(el.dataset.path))))
         const up = rows.querySelector('.dir[data-up]')
         if (up) up.addEventListener('click', () => navigate(currentPath.slice(0, -1).join('/')))
       }
-
-      async function api(path, options) {
-        const res = await fetch(path, {
-          ...options,
-          headers: { 'content-type': 'application/json', ...(options.headers || {}) },
-        })
-        if (!res.ok) {
-          alert(`操作失败：${(await res.json().catch(() => ({}))).error || res.status}`)
-          return null
-        }
+      async function fsApi(path, options) {
+        const res = await fetch(path, { ...options, headers: { 'content-type': 'application/json' } })
+        if (!res.ok) { alert('操作失败：' + ((await res.json().catch(() => ({}))).error || res.status)); return null }
         return res.json()
       }
-
       document.getElementById('newFolderBtn').addEventListener('click', async () => {
         const name = prompt('文件夹名称')
         if (!name) return
-        await api('/api/fs/mkdir', {
-          method: 'POST',
-          body: JSON.stringify({ path: pathString() ? pathString() + '/' + name : name }),
-        })
+        await fsApi('/api/fs/mkdir', { method: 'POST', body: JSON.stringify({ path: pathString() ? pathString() + '/' + name : name }) })
         await load()
       })
-
       document.getElementById('uploadBtn').addEventListener('click', () => document.getElementById('fileInput').click())
       document.getElementById('fileInput').addEventListener('change', async (event) => {
         const file = event.target.files[0]
@@ -151,55 +169,35 @@
           reader.onerror = reject
           reader.readAsDataURL(file)
         })
-        await api('/api/fs/upload', {
-          method: 'POST',
-          body: JSON.stringify({ path: pathString(), name: file.name, data }),
-        })
+        await fsApi('/api/fs/upload', { method: 'POST', body: JSON.stringify({ path: pathString(), name: file.name, data }) })
         event.target.value = ''
         await load()
       })
 
-      document.getElementById('logoutBtn').addEventListener('click', async () => {
-        await fetch('/api/auth/logout', { method: 'POST' })
-        location.href = '/login.html'
-      })
-
+      // ---------- DSH window ----------
       async function refreshDsh() {
         const res = await fetch('/api/dsh/status')
         if (!res.ok) return
         const body = await res.json()
         const running = body.running
+        document.getElementById('dshState').textContent = running ? '运行中' : '未运行'
+        document.getElementById('dshState').innerHTML =
+          `<span class="dot ${running ? 'on' : 'off'}"></span> ${running ? '运行中' : '未运行'}`
         document.getElementById('stopBtn').classList.toggle('hidden', !running)
-        document.getElementById('dshLink').classList.toggle('hidden', !running)
-        document.getElementById('dshStatus').textContent = running
-          ? `运行中（端口 ${body.instance.port}）`
-          : '未运行'
-        if (running) {
-          document.getElementById('dshLink').href = body.url
-        }
+        document.getElementById('openDshBtn').classList.toggle('hidden', !running)
+        if (running) document.getElementById('openDshBtn').onclick = () => window.open(body.url, '_blank')
       }
       document.getElementById('launchBtn').addEventListener('click', async () => {
-        const res = await fetch('/api/dsh/launch', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ folder: pathString() }),
-        })
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}))
-          alert(body.error === 'already_running' ? '已有运行中的 DSH，请先停止' : '启动失败')
-          return
-        }
+        const res = await fetch('/api/dsh/launch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder: pathString() }) })
+        if (!res.ok) { const b = await res.json().catch(() => ({})); alert(b.error === 'already_running' ? '已有运行中的 DSH，请先停止' : '启动失败'); return }
         await refreshDsh()
       })
-      document.getElementById('stopBtn').addEventListener('click', async () => {
-        await fetch('/api/dsh/stop', { method: 'POST' })
-        await refreshDsh()
-      })
+      document.getElementById('stopBtn').addEventListener('click', async () => { await fetch('/api/dsh/stop', { method: 'POST' }); await refreshDsh() })
 
       let pluginCatalog = []
       async function loadPlugins() {
         const folder = pathString()
-        const res = await fetch('/api/plugins' + (folder ? `?folder=${encodeURIComponent(folder)}` : ''))
+        const res = await fetch('/api/plugins' + (folder ? '?folder=' + encodeURIComponent(folder) : ''))
         if (!res.ok) return
         const { plugins } = await res.json()
         pluginCatalog = plugins
@@ -207,7 +205,7 @@
         list.innerHTML = plugins.length === 0 ? '<p>暂无可用插件</p>' : ''
         for (const plugin of plugins) {
           const label = document.createElement('label')
-          label.style.display = 'block'
+          label.className = 'plugin-item'
           label.innerHTML = `<input type="checkbox" data-id="${plugin.id}" ${plugin.enabled ? 'checked' : ''}/> <strong>${plugin.name}</strong> — ${plugin.description || ''}`
           list.appendChild(label)
         }
@@ -218,28 +216,118 @@
         if (!panel.classList.contains('hidden')) await loadPlugins()
       })
       document.getElementById('savePluginsBtn').addEventListener('click', async () => {
-        const plugins = pluginCatalog.map((plugin) => ({
-          id: plugin.id,
-          enabled: document.querySelector(`input[data-id="${plugin.id}"]`).checked,
-        }))
-        const res = await fetch('/api/plugins/select', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ folder: pathString(), plugins }),
-        })
+        const plugins = pluginCatalog.map((p) => ({ id: p.id, enabled: document.querySelector(`input[data-id="${p.id}"]`).checked }))
+        const res = await fetch('/api/plugins/select', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder: pathString(), plugins }) })
         if (res.ok) alert('已保存')
       })
 
-      ;(async function init() {
-        const user = await me()
-        if (!user) {
-          location.href = '/login.html'
-          return
+      // ---------- admin window ----------
+      async function loadUsers() {
+        const res = await fetch('/api/admin/users')
+        const { users } = await res.json()
+        const tbody = document.querySelector('#adminUsers tbody')
+        tbody.innerHTML = ''
+        const badge = { admin: '管理员', pending: '待审核', active: '正常', disabled: '已禁用' }
+        for (const u of users) {
+          const tr = document.createElement('tr')
+          const actions = u.role === 'pending'
+            ? `<button class="btn small ghost" data-act="approve" data-id="${u.id}">通过</button>`
+            : u.role === 'active' ? `<button class="btn small danger" data-act="disable" data-id="${u.id}">禁用</button>` : ''
+          tr.innerHTML = `<td>${u.username}</td><td><span class="badge ${u.role}">${badge[u.role] || u.role}</span></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${actions}</td>`
+          tbody.appendChild(tr)
         }
+        tbody.onclick = async (event) => {
+          const btn = event.target.closest('button[data-act]')
+          if (!btn) return
+          const { act, id } = btn.dataset
+          const res = await fetch(`/api/admin/users/${id}/${act}`, { method: 'POST' })
+          if (res.ok) await loadUsers()
+          else alert('操作失败：' + ((await res.json().catch(() => ({}))).error || 'unknown'))
+        }
+      }
+
+      // ---------- clock ----------
+      function tick() {
+        document.getElementById('clock').textContent = new Date().toLocaleString('zh-CN', { hour12: false })
+      }
+
+      // ---------- init ----------
+      document.getElementById('logoutBtn').addEventListener('click', async () => { await fetch('/api/auth/logout', { method: 'POST' }); location.href = '/login.html' })
+      tick(); setInterval(tick, 1000)
+
+      ;(async function init() {
+        user = await me()
+        if (!user) { location.href = '/login.html'; return }
         document.getElementById('who').textContent = user.username
+        const roleLabel = user.role === 'admin' ? '管理员' : user.role === 'pending' ? '待审核' : '正常'
+        document.getElementById('roleBadge').textContent = roleLabel
+        document.getElementById('roleBadge').classList.remove('hidden')
+        if (user.role === 'admin') {
+          document.getElementById('adminIcon').classList.remove('hidden')
+          document.getElementById('adminTask').classList.remove('hidden')
+          await loadUsers()
+        }
         await load()
         await refreshDsh()
       })()
     </script>
+
+    <!-- ============ 窗口：DSH ============ -->
+    <div class="window" id="win-dsh">
+      <div class="window-title">
+        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>DSH</div>
+        <div class="controls"><button class="close" onclick="closeWindow('dsh')">✕</button></div>
+      </div>
+      <div class="window-body">
+        <div class="stat" id="dshState"><span class="dot off"></span> 未运行</div>
+        <div class="row-actions">
+          <button class="btn primary" id="launchBtn">启动 DSH</button>
+          <button class="btn ghost hidden" id="stopBtn">停止</button>
+          <button class="btn ghost hidden" id="openDshBtn">打开 DSH ↗</button>
+          <button class="btn ghost" id="managePluginsBtn">管理插件</button>
+        </div>
+        <div class="section-label">在此文件夹启动：<span id="dshFolder">根目录</span></div>
+        <div class="hidden" id="pluginPanel">
+          <div class="section-label">当前文件夹插件</div>
+          <div id="pluginList"></div>
+          <button class="btn primary small" id="savePluginsBtn" style="margin-top:10px">保存插件选择</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 窗口：我的文件 ============ -->
+    <div class="window" id="win-files">
+      <div class="window-title">
+        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>我的文件</div>
+        <div class="controls"><button class="close" onclick="closeWindow('files')">✕</button></div>
+      </div>
+      <div class="window-body">
+        <div class="pathbar">
+          <button class="btn ghost small" id="newFolderBtn">新建文件夹</button>
+          <button class="btn ghost small" id="uploadBtn">上传文件</button>
+          <input id="fileInput" type="file" class="hidden" />
+          <span class="crumbs" id="breadcrumb"></span>
+        </div>
+        <table class="files">
+          <thead><tr><th>名称</th><th>类型</th><th>大小</th><th>修改时间</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ 窗口：管理台 ============ -->
+    <div class="window" id="win-admin">
+      <div class="window-title">
+        <div class="t"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/></svg>管理台</div>
+        <div class="controls"><button class="close" onclick="closeWindow('admin')">✕</button></div>
+      </div>
+      <div class="window-body">
+        <div class="section-label">用户审核与管理</div>
+        <table class="admin" id="adminUsers">
+          <thead><tr><th>用户名</th><th>角色</th><th>注册时间</th><th>操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </body>
 </html>

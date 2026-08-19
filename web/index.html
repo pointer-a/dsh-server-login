@@ -6,13 +6,11 @@
     <title>dsh-server-login</title>
   </head>
   <body>
-    <h1>dsh-server-login</h1>
-    <p>DSH 服务端登录插件。</p>
-    <ul>
-      <li><a href="/login.html">登录</a></li>
-      <li><a href="/register.html">注册</a></li>
-      <li><a href="/admin.html">管理台</a></li>
-      <li><a href="/desktop.html">桌面（P2，占位）</a></li>
-    </ul>
+    <script>
+      ;(async () => {
+        const res = await fetch('/api/auth/me')
+        location.href = res.ok ? '/desktop.html' : '/login.html'
+      })()
+    </script>
   </body>
 </html>

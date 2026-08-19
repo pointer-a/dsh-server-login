@@ -4,49 +4,50 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>注册 — dsh-server-login</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, sans-serif; max-width: 22rem; margin: 4rem auto; padding: 0 1rem; }
-      label { display: block; margin: 1rem 0 0.25rem; }
-      input { width: 100%; padding: 0.5rem; box-sizing: border-box; }
-      button { width: 100%; margin-top: 1.25rem; padding: 0.6rem; }
-      #msg { min-height: 1.2em; }
-      #msg.ok { color: #27ae60; }
-      a { color: inherit; }
-    </style>
+    <link rel="stylesheet" href="/design.css" />
   </head>
-  <body>
-    <h1>注册</h1>
-    <form id="register">
-      <label for="username">用户名（3–32 位字母/数字/下划线/连字符）</label>
-      <input id="username" name="username" autocomplete="username" required />
-      <label for="password">密码（至少 8 位）</label>
-      <input id="password" name="password" type="password" autocomplete="new-password" required />
-      <button type="submit">注册</button>
-    </form>
-    <p id="msg"></p>
-    <p>已有账号？<a href="/login.html">登录</a></p>
+  <body class="auth-bg">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img class="logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234d7cfe'/%3E%3Cpath d='M8 9h16l-9 7 9 7H8z' fill='%23fff'/%3E%3C/svg%3E" alt="logo" />
+        <h1>dsh-server-login</h1>
+      </div>
+      <p class="auth-sub">注册后需管理员审核方可登录</p>
+
+      <form id="register">
+        <div class="field">
+          <label for="username">用户名（3–32 位字母/数字/下划线/连字符）</label>
+          <input id="username" name="username" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">密码（至少 8 位）</label>
+          <input id="password" name="password" type="password" autocomplete="new-password" required />
+        </div>
+        <button class="btn primary" type="submit">注 册</button>
+        <p class="msg" id="msg"></p>
+      </form>
+
+      <p class="auth-alt">已有账号？<a href="/login.html">登录</a></p>
+    </div>
+
     <script>
       const form = document.getElementById('register')
       const msg = document.getElementById('msg')
       form.addEventListener('submit', async (event) => {
         event.preventDefault()
         msg.textContent = ''
-        msg.classList.remove('ok')
+        msg.className = 'msg err'
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            username: form.username.value,
-            password: form.password.value,
-          }),
+          body: JSON.stringify({ username: form.username.value, password: form.password.value }),
         })
         const body = await res.json().catch(() => ({}))
         if (!res.ok) {
           msg.textContent = body.error === 'username_taken' ? '用户名已被占用' : body.message || '注册失败'
           return
         }
-        msg.classList.add('ok')
+        msg.className = 'msg ok'
         msg.textContent = '注册成功，请等待管理员审核后登录。'
         form.reset()
       })
