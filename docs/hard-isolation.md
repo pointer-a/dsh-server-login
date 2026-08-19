@@ -14,7 +14,7 @@
 - `0700` 才真正生效（别的账号进不来）。
 - 用户 A 的 DSH 进程，即使用户 B 的目录是 `0700`，也会被系统直接拒绝。
 
-**代价**：需要 root 权限 + 每个用户创建时要做一次「建账号 + 改属主」的准备工作。
+**代价**：需要 root 权限 + 每个用户创建时要做一次「建账号 + 改属主」。好在可以自动化（见 §3.1），一次配好就不用管。
 
 ---
 
@@ -55,7 +55,7 @@ systemctl restart dsh-server-login
 
 这是**唯一需要手动做的事**：用户注册后，要先给他建系统账号 + 把他目录改成这个账号所有，硬隔离才完整。**没做这一步，DSH 会以 root 运行（跟没开硬隔离一样）。**
 
-脚本（`provision-user.sh`，root 运行）：
+创建脚本（`provision-user.sh`，root 运行）：
 
 ```bash
 #!/usr/bin/env bash
@@ -83,7 +83,82 @@ chmod +x provision-user.sh
 
 **userId 从哪拿**：用管理员登录 → 管理台 → 用户列表里那个 id（或直接查库，见 [troubleshooting.md](troubleshooting.md) 的「查看管理员账号」一节）。
 
-> **建议**：把这个脚本接到注册流程（比如注册后管理员手动跑一次，或写个 webhook/定时任务自动跑）。漏跑一个用户 = 那个用户还在 root 下跑，等于没隔离。
+### 3.1 让它自动跑（不用每次手动）
+
+每个用户注册后都手动跑一次太麻烦，这里给几个**自动触发**方案，按你服务器的环境挑一个：
+
+**方案 A：systemd 监控目录（最简单，无需额外软件）**
+
+把上面那个脚本存成 `/usr/local/bin/provision-user.sh`，然后用 systemd 的路径监控：**每当某个用户的目录被创建（即注册成功），就自动跑一次脚本**。
+
+`/etc/systemd/system/dsh-provision.path`：
+
+```ini
+[Unit]
+Description=Watch new user dirs and provision OS accounts
+
+[Path]
+PathExistsGlob=/var/lib/dsh-server-login/users/*/home
+Unit=dsh-provision.service
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/dsh-provision.service`：
+
+```ini
+[Unit]
+Description=Provision a newly registered user
+After=dsh-server-login.service
+
+[Service]
+Type=oneshot
+# 找出刚注册、还没建账号的用户，挨个建
+ExecStart=/usr/local/bin/provision-new-users.sh
+```
+
+`/usr/local/bin/provision-new-users.sh`（核心：遍历所有用户目录，已建账号的跳过，没建的建）：
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+for dir in /var/lib/dsh-server-login/users/*/; do
+  id="$(basename "$dir")"
+  user="dsh-$id"
+  # 已有账号就跳过（幂等）
+  if id "$user" &>/dev/null; then continue; fi
+  uid="$(dsh-server-login uid-for-user "$id")"
+  useradd -u "$uid" -M -s /usr/sbin/nologin "$user"
+  chown -R "$uid:$uid" "$dir"
+  echo "provisioned $id -> uid $uid"
+done
+```
+
+启用：
+
+```sh
+systemctl daemon-reload
+systemctl enable --now dsh-provision.path
+```
+
+这样以后**用户一注册，目录一出现，systemd 就自动建账号 + 改属主**，管理员不用再管。
+
+**方案 B：定时任务（简单粗暴，隔几分钟扫一次）**
+
+如果不想用 systemd 的 path 监控，就用 cron 每 5 分钟跑一遍同一个 `provision-new-users.sh`（幂等，跑多少次都安全）：
+
+```sh
+crontab -e
+# 加一行：
+*/5 * * * * /usr/local/bin/provision-new-users.sh
+```
+
+**方案 C：手动（用户少时够用）**
+
+用户少、注册不频繁，管理员有空就手动跑 `./provision-user.sh <userId>` 也行。**但别忘了**——漏一个 = 那个用户还在 root 下跑，等于没隔离。
+
+> **推荐**：方案 A 最省心、自动、幂等，一次配好就不用管。
 
 ---
 
@@ -128,12 +203,3 @@ chmod 600 /var/lib/dsh-server-login/users/<A的id>/home/s.txt
 | 忘了给某个用户做第 3 步 | 补跑，然后重启该用户的 DSH。 |
 
 ---
-
-## 6. 更强隔离（可选，暂不默认）
-
-账号级隔离已经挡住「同账号越权读」。如果以后要更严，可以考虑：
-
-- **每用户容器**（runc / systemd-nspawn）：私有挂载命名空间 + 只读系统盘，隔离更彻底，但运维重得多。
-- **收窄 Landlock 读授权**：把默认的「可读全部」收成「系统路径 + 用户自己目录」，作纵深防御。
-
-需要时再深入，新手先做到第 3 步即可。

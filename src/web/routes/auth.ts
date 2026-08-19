@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
+import { runProvisionScript } from '../../provision.js'
 import {
   audit,
   createSession,
@@ -72,7 +73,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       chmodSync(homeDir, 0o700)
       const passHash = await hashPassword(password)
       createUser(db, { id, username, passHash, role: 'pending', homeDir })
-      audit(db, id, 'register', JSON.stringify({ username }))
+      const provision = await runProvisionScript(app.config.provisionScript, id, username)
+      audit(db, id, 'register', JSON.stringify({ username, provision }))
       return reply.code(201).send({ user: { id, username, role: 'pending' } })
     },
   )
