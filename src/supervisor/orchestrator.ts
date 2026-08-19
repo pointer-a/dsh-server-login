@@ -167,7 +167,12 @@ export class Supervisor {
       DSH_SERVER_LOGIN_ROLE: role,
       DSH_SERVER_LOGIN_HANDOFF_PATH: this.handoffPath(userId), // both roles: main writes, watchdog reads
     }
-    if (role === 'main') env.DSH_SERVER_LOGIN_PORT = String(port)
+    if (role === 'main') {
+      env.DSH_SERVER_LOGIN_PORT = String(port)
+      // The folder the user launched from; the runtime plugin registers it as
+      // the DSH workspace so the session's working directory matches it.
+      env.DSH_SERVER_LOGIN_WORKSPACE = folder
+    }
 
     const child = this.spawnAsUser(userId, command, [...args, ...launchArgs], { cwd: folder, env })
     this.trackChild(userId, instance, child)
