@@ -98,6 +98,14 @@ npm run build
 
 装完这个目录里会有个 `lib/`（编译产物）和 `node_modules/`（依赖）。
 
+> **让子 DSH 能加载本插件的运行时插件**：本插件会通过 `--patch` 给每个用户的 DSH 挂一个运行时插件（负责注入「守护 DSH」上下文、绑定端口等）。前提是 `dsh-server-login` 要装进 DSH 的 profile：
+>
+> ```sh
+> dsh plugin --profile web add /dsh_login/dsh-server-login
+> ```
+>
+> 不做这步，运行时插件加载不了，守护 DSH 的上下文注入就不会生效。
+
 ---
 
 ## 5. 第 4 步：创建管理员账号
