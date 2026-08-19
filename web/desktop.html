@@ -104,6 +104,7 @@
           <button class="btn primary small" id="savePluginsBtn" style="margin-top:10px">保存插件选择</button>
         </div>
       </div>
+      <div class="resize" title="拖动缩放"></div>
     </div>
 
     <!-- ============ 窗口：我的文件 ============ -->
@@ -122,6 +123,7 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
+      <div class="resize" title="拖动缩放"></div>
     </div>
 
     <!-- ============ 窗口：管理台 ============ -->
@@ -137,6 +139,7 @@
           <tbody></tbody>
         </table>
       </div>
+      <div class="resize" title="拖动缩放"></div>
     </div>
 
     <script>
@@ -184,6 +187,22 @@
         })
       })
       document.querySelectorAll('.window').forEach((w) => w.addEventListener('pointerdown', () => focusWindow(w)))
+      // resize by bottom-right handle
+      document.querySelectorAll('.resize').forEach((rz) => {
+        rz.addEventListener('pointerdown', (e) => {
+          e.stopPropagation()
+          const win = rz.closest('.window')
+          focusWindow(win)
+          const sx = e.clientX, sy = e.clientY, w = win.offsetWidth, h = win.offsetHeight
+          const move = (ev) => {
+            win.style.width = Math.max(380, w + (ev.clientX - sx)) + 'px'
+            win.style.height = Math.max(240, h + (ev.clientY - sy)) + 'px'
+          }
+          const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+          window.addEventListener('pointermove', move)
+          window.addEventListener('pointerup', up)
+        })
+      })
       // open apps (single click) + taskbar
       document.querySelectorAll('[data-open]').forEach((el) => el.addEventListener('click', () => openWindow(el.dataset.open)))
       document.querySelectorAll('[data-app]').forEach((el) => el.addEventListener('click', () => appAction(el.dataset.app)))
