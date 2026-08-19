@@ -1,21 +1,27 @@
 /**
- * Runtime plugin loaded into each child DSH. It is part of THIS bundle (not a
- * harness modification) and reads the env contract the orchestrator sets at
- * spawn time:
+ * Runtime plugin loaded into each child DSH (mounted by the patch the
+ * orchestrator generates). It is part of THIS bundle (not a harness change) and
+ * reads the env contract set at spawn time:
  *
  *   DSH_SERVER_LOGIN_PORT          — loopback port the web server must bind (main)
  *   DSH_SERVER_LOGIN_ROLE          — 'main' | 'watchdog'
- *   DSH_SERVER_LOGIN_HANDOFF_PATH  — post-restart command handoff file (watchdog)
+ *   DSH_SERVER_LOGIN_HANDOFF_PATH  — post-restart command handoff file (both roles)
  *   DSH_HOME / DEEPSEEK_API_KEY    — per-user home + platform key
  *
- * The web server's port is bound from this value (the deployment patch overrides
- * the harness webserver row — see docs/deployment.md); the watchdog's repair /
- * session-resume is the harness-side agent behavior, wired at real-harness
- * integration. This plugin currently logs the resolved values so operators can
- * verify the contract reached the child.
+ * On the MAIN role it also registers a system-prompt section that tells the
+ * agent about the watchdog DSH and the restart contract: on a needed restart
+ * (e.g. after a plugin install) the agent writes the post-restart command to
+ * the handoff path, and the orchestrator pulls up a one-shot watchdog to
+ * execute it after the main respawns.
  * @module dsh-server-login/runtime
  */
 export declare const name = "dsh-server-login-runtime";
+/** The `ctx.systemPrompt.section()` contract this plugin needs (structural). */
+export interface PromptSection {
+    name: string;
+    order: number;
+    text: string | ((context: unknown) => string);
+}
 export interface RuntimeEnv {
     role: 'main' | 'watchdog';
     port?: number;
@@ -23,5 +29,18 @@ export interface RuntimeEnv {
 }
 /** Parse the env contract set by the orchestrator. */
 export declare function readRuntimeEnv(env?: NodeJS.ProcessEnv): RuntimeEnv;
-/** Cordis entry. Logs the resolved env so the contract is observable. */
-export declare function apply(): void;
+/** Prompt text telling the main agent about the watchdog + restart contract. */
+export declare function watchdogPrompt(handoffPath?: string): string;
+/** The section contributed by this plugin; exported for tests. */
+export declare function watchdogSection(runtime: RuntimeEnv): PromptSection;
+/**
+ * Cordis entry. Logs the resolved env, and on the main role registers the
+ * watchdog-contract system-prompt section.
+ * @param ctx - the Cordis context.
+ */
+export declare function apply(ctx: {
+    systemPrompt?: {
+        section(section: PromptSection): () => void;
+    };
+    on?: (event: string, fn: () => void) => void;
+}): void;

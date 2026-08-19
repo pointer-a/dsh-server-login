@@ -80,12 +80,13 @@ try {
   console.log('launch      ->', r.status)
   assert(r.status === 200, 'launch succeeds')
 
-  // Patch file should enable p1 only.
+  // Patch file should mount the runtime plugin and enable p1 only.
   const patchesDir = join(dataRoot, 'users', 'u1', 'patches')
   const files = readdirSync(patchesDir)
   assert(files.length === 1, 'one patch file written')
   const patch = readFileSync(join(patchesDir, files[0]), 'utf8')
   console.log('patch       ->', JSON.stringify(patch))
+  assert(patch.includes('dsh-server-login/runtime'), 'patch mounts the runtime plugin')
   assert(patch.includes('p1') && !patch.includes('p2'), 'patch enables p1 only')
 
   // Proxy: the child's argv should include --patch.

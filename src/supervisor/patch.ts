@@ -1,15 +1,16 @@
 /**
- * cordis patch rendering for a folder's enabled plugins.
- *
- * Each catalog id doubles as the package name; the emitted patch inserts one
- * row per enabled plugin so the child DSH mounts it. The real harness loads
- * this via `--patch <file>`.
+ * cordis patch rendering for a child DSH. Always mounts the runtime plugin
+ * (`dsh-server-login/runtime`) so every child injects the watchdog contract,
+ * plus one row per enabled folder plugin (id doubles as package name). The real
+ * harness loads this via `--patch <file>`.
  * @module dsh-server-login/supervisor/patch
  */
 
-/** Render a patch YAML enabling `enabledPlugins`; empty string when none. */
+/** The runtime plugin patch row, mounted in every child DSH. */
+const RUNTIME_ROW = '    - id: dsh-server-login-runtime\n      name: dsh-server-login/runtime'
+
+/** Render a patch YAML always enabling the runtime plugin plus `enabledPlugins`. */
 export function renderPatch(enabledPlugins: readonly string[]): string {
-  if (enabledPlugins.length === 0) return ''
-  const rows = enabledPlugins.map((id) => `    - id: ${id}\n      name: ${id}`).join('\n')
-  return `- insert:\n${rows}\n`
+  const rows = [RUNTIME_ROW, ...enabledPlugins.map((id) => `    - id: ${id}\n      name: ${id}`)]
+  return `- insert:\n${rows.join('\n')}\n`
 }
