@@ -6,7 +6,6 @@
  *   DSH_SERVER_LOGIN_PORT          — loopback port the web server must bind (main)
  *   DSH_SERVER_LOGIN_ROLE          — 'main' | 'watchdog'
  *   DSH_SERVER_LOGIN_HANDOFF_PATH  — post-restart command handoff file (both roles)
- *   DSH_SERVER_LOGIN_WORKSPACE     — absolute folder the user launched from (main)
  *   DSH_HOME / DEEPSEEK_API_KEY    — per-user home + platform key
  *
  * On the MAIN role it also registers a system-prompt section that tells the
@@ -30,7 +29,6 @@ export interface RuntimeEnv {
   role: 'main' | 'watchdog'
   port?: number
   handoffPath?: string
-  workspace?: string
 }
 
 /** Parse the env contract set by the orchestrator. */
@@ -38,12 +36,10 @@ export function readRuntimeEnv(env: NodeJS.ProcessEnv = process.env): RuntimeEnv
   const role = env.DSH_SERVER_LOGIN_ROLE === 'watchdog' ? 'watchdog' : 'main'
   const port = Number(env.DSH_SERVER_LOGIN_PORT ?? '')
   const handoffPath = env.DSH_SERVER_LOGIN_HANDOFF_PATH
-  const workspace = env.DSH_SERVER_LOGIN_WORKSPACE
   return {
     role,
     ...(Number.isFinite(port) && port > 0 ? { port } : {}),
     ...(handoffPath !== undefined && handoffPath !== '' ? { handoffPath } : {}),
-    ...(workspace !== undefined && workspace !== '' ? { workspace } : {}),
   }
 }
 
@@ -75,35 +71,14 @@ export function watchdogSection(runtime: RuntimeEnv): PromptSection {
  * watchdog-contract system-prompt section.
  * @param ctx - the Cordis context.
  */
-export function apply(ctx: {
-  systemPrompt?: { section(section: PromptSection): () => void }
-  on?: (event: string, fn: () => void) => void
-  get?: (name: string, strict?: boolean) => unknown
-}): void {
+export function apply(ctx: { systemPrompt?: { section(section: PromptSection): () => void }; on?: (event: string, fn: () => void) => void }): void {
   const runtime = readRuntimeEnv()
   // eslint-disable-next-line no-console
   console.log(
-    `[dsh-server-login-runtime] role=${runtime.role} port=${runtime.port ?? ''} handoff=${runtime.handoffPath ?? ''} workspace=${runtime.workspace ?? ''}`,
+    `[dsh-server-login-runtime] role=${runtime.role} port=${runtime.port ?? ''} handoff=${runtime.handoffPath ?? ''}`,
   )
   if (runtime.role === 'main' && ctx.systemPrompt !== undefined) {
     const dispose = ctx.systemPrompt.section(watchdogSection(runtime))
     ctx.on?.('dispose', dispose)
-  }
-  // Register the launch folder as a DSH workspace so the session's working
-  // directory matches the folder the user opened from. Read the registry via
-  // `ctx.get` (not a property access) so a profile without it — the headless
-  // watchdog — resolves to `undefined` instead of throwing on an un-injected
-  // service. Best-effort: a missing directory must not fail boot.
-  if (runtime.role === 'main' && runtime.workspace !== undefined && ctx.get !== undefined) {
-    const registry = ctx.get('workspaceRegistry', false) as
-      | { create(path: string, title?: string): unknown }
-      | undefined
-    if (registry !== undefined) {
-      try {
-        registry.create(runtime.workspace)
-      } catch (error) {
-        console.log(`[dsh-server-login-runtime] workspace register failed: ${String(error)}`)
-      }
-    }
   }
 }

@@ -6,7 +6,6 @@
  *   DSH_SERVER_LOGIN_PORT          — loopback port the web server must bind (main)
  *   DSH_SERVER_LOGIN_ROLE          — 'main' | 'watchdog'
  *   DSH_SERVER_LOGIN_HANDOFF_PATH  — post-restart command handoff file (both roles)
- *   DSH_SERVER_LOGIN_WORKSPACE     — absolute folder the user launched from (main)
  *   DSH_HOME / DEEPSEEK_API_KEY    — per-user home + platform key
  *
  * On the MAIN role it also registers a system-prompt section that tells the
@@ -27,7 +26,6 @@ export interface RuntimeEnv {
     role: 'main' | 'watchdog';
     port?: number;
     handoffPath?: string;
-    workspace?: string;
 }
 /** Parse the env contract set by the orchestrator. */
 export declare function readRuntimeEnv(env?: NodeJS.ProcessEnv): RuntimeEnv;
@@ -45,5 +43,4 @@ export declare function apply(ctx: {
         section(section: PromptSection): () => void;
     };
     on?: (event: string, fn: () => void) => void;
-    get?: (name: string, strict?: boolean) => unknown;
 }): void;
