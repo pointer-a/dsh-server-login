@@ -51,6 +51,43 @@ systemctl restart dsh-server-login
 
 ---
 
+## 2.1 ⚠️ 前置：`dsh` 必须装在降权账号能读到的位置（不能装在 `/root` 下）
+
+硬隔离降权后，子 DSH 以每用户账号（uid > 100000）运行，这些账号**读不到 root 的 home 目录 `/root`**。
+
+如果 `dsh`（以及它依赖的 node）是用 nvm 装在 `/root/.nvm/...` 下的（默认就是），开了 `account` 之后，子 DSH 一启动就会报 `Cannot find module '/root/.nvm/.../bin/dsh'`，然后**每秒崩溃循环**。日志长这样：
+
+```
+[dsh-child main] node:internal/modules/cjs/loader:1210
+Error: Cannot find module '/root/.nvm/versions/node/.../bin/dsh'
+```
+
+**所以开 §2 的开关之前，先把 node + dsh 装到系统级位置**（所有账号都能读）：
+
+```sh
+# 1) 系统级安装 node 22（装到 /usr/bin）
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+apt install -y nodejs
+
+# 2) 系统级安装 dsh（注意：必须强制 prefix，否则会被 nvm 劫持装回 /root）
+NPM_CONFIG_PREFIX=/usr/local /usr/bin/npm install -g @deepseek-ai/dsh
+ls -l /usr/local/bin/dsh      # 必须是 /usr/local/bin/dsh，不能在 /root 下
+
+# 3) 环境变量指向系统 dsh
+#    /etc/dsh-server-login.env → DSH_SERVER_LOGIN_DSH_BIN=/usr/local/bin/dsh
+
+# 4) systemd 的 PATH 去掉 /root/.nvm/...，改成系统路径
+#    （子 DSH 的 #!/usr/bin/env node 才找得到系统 node）
+#    /etc/systemd/system/dsh-server-login.service：
+#    Environment=PATH=/usr/bin:/usr/local/bin:/usr/sbin:/usr/local/sbin:/sbin:/bin
+```
+
+> **nvm 劫持 npm 的坑**：即使你用 `/usr/bin/npm`，它仍可能装到 `/root/.nvm/...`——因为 `/root/.npmrc` 里被 nvm 写了 `prefix=/root/.nvm/versions/node/...`。检查：`/usr/bin/npm prefix -g`（返回 nvm 路径就是被劫持了）。解决：命令前加 `NPM_CONFIG_PREFIX=/usr/local` 强制覆盖。
+
+> **另一个降权后读不到的东西**：运行时插件 `dsh-server-login/runtime` 在 `git clone` 的目录（如 `/dsh_login/dsh-server-login/lib/`）里，降权账号也要能读到。检查 `ls -ld /dsh_login`，如果是 `drwx------`（只有 root），执行 `chmod 755 /dsh_login`。
+
+---
+
 ## 3. 为每个用户创建系统账号（核心一步）
 
 这是**唯一需要手动做的事**：用户注册后，要先给他建系统账号 + 把他目录改成这个账号所有，硬隔离才完整。**没做这一步，DSH 会以 root 运行（跟没开硬隔离一样）。**
@@ -206,5 +243,7 @@ chmod 600 /var/lib/dsh-server-login/users/<A的id>/home/s.txt
 | `setpriv: no permission` 报错 | 编排服务没以 root 运行。 |
 | 新用户启动 DSH 报权限错误 | 该用户目录 chown 了吗？重新跑 provision-user.sh。 |
 | 忘了给某个用户做第 3 步 | 补跑，然后重启该用户的 DSH。 |
+| DSH 每秒崩溃，日志 `Cannot find module '/root/.nvm/.../bin/dsh'` | `dsh` 装在 `/root` 下，降权账号读不到。按 §2.1 把 dsh 装到系统级位置。 |
+| `/usr/bin/npm install -g` 还是装到 `/root/.nvm` | npm 全局前缀被 nvm 劫持（`/root/.npmrc` 里的 `prefix`）。用 `NPM_CONFIG_PREFIX=/usr/local` 强制覆盖。 |
 
 ---
