@@ -47,6 +47,8 @@ export interface ServerConfig {
   cookieDomain: string
   /** Whether to pass `--patch` to child DSHs (needs a dsh CLI that supports it). */
   enablePatch: boolean
+  /** Enable the loopback OUTPUT owner-match port guard (Linux + root). */
+  portGuard: boolean
   /** Secret used to encrypt per-user secrets at rest (from env or dataRoot/secret.key). */
   encryptionSecret: string
 }
@@ -69,6 +71,7 @@ export interface ConfigOverrides {
   baseDomain?: string
   cookieDomain?: string
   enablePatch?: boolean
+  portGuard?: boolean
   encryptionSecret?: string
 }
 
@@ -166,6 +169,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     baseDomain: overrides.baseDomain ?? process.env.DSH_SERVER_LOGIN_BASE_DOMAIN ?? DEFAULT_BASE_DOMAIN,
     cookieDomain: overrides.cookieDomain ?? process.env.DSH_SERVER_LOGIN_COOKIE_DOMAIN ?? DEFAULT_COOKIE_DOMAIN,
     enablePatch: overrides.enablePatch ?? toBool(process.env.DSH_SERVER_LOGIN_ENABLE_PATCH, DEFAULT_ENABLE_PATCH),
+    portGuard: overrides.portGuard ?? toBool(process.env.DSH_SERVER_LOGIN_PORT_GUARD, false),
     encryptionSecret:
       overrides.encryptionSecret ?? resolveEncryptionSecret(dataRoot),
   }

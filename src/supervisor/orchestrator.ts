@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { uidForUser } from '../isolation.js'
+import { createPortGuard, type PortGuard } from './firewall.js'
 import { findFreePort, scrubEnv } from './spawn.js'
 
 export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped'
@@ -61,11 +62,15 @@ export class Supervisor {
   private readonly children = new Map<string, ChildProcess>()
   private readonly restartTimers = new Map<string, NodeJS.Timeout>()
 
+  private readonly portGuard: PortGuard | undefined
+
   constructor(
     private readonly config: ServerConfig,
     /** Resolve the user's own API key (decrypted); null = user has none. */
     private readonly resolveApiKey: (userId: string) => string | null,
-  ) {}
+  ) {
+    this.portGuard = createPortGuard(config.portGuard)
+  }
 
   /** Spawn the resident main DSH for a user (watchdog is pulled up on demand). */
   async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
@@ -142,7 +147,8 @@ export class Supervisor {
   }
 
   private async spawnInstance(userId: string, role: InstanceRole, folder: string, patchPath?: string): Promise<Instance> {
-    const port = role === 'main' ? await findFreePort() : undefined
+    const isMain = role === 'main'
+    const port = isMain ? await findFreePort() : undefined
     const instance: Instance = {
       id: randomUUID(),
       userId,
@@ -171,7 +177,7 @@ export class Supervisor {
       DSH_SERVER_LOGIN_ROLE: role,
       DSH_SERVER_LOGIN_HANDOFF_PATH: this.handoffPath(userId), // both roles: main writes, watchdog reads
     }
-    if (role === 'main') {
+    if (isMain) {
       env.DSH_SERVER_LOGIN_PORT = String(port)
     }
 
@@ -204,6 +210,18 @@ export class Supervisor {
     child.on('spawn', () => {
       instance.status = 'running'
       instance.pid = child.pid ?? undefined
+      if (instance.role === 'main' && instance.port !== undefined && this.portGuard !== undefined) {
+        try {
+          this.portGuard.install(instance.port)
+        } catch (error) {
+          // Fail closed: without the port guard a co-tenant could reach this
+          // DSH's loopback RPC directly. Kill the just-spawned child and mark
+          // the instance crashed rather than serve unguarded.
+          instance.status = 'crashed'
+          instance.lastError = error instanceof Error ? error.message : String(error)
+          child.kill('SIGKILL')
+        }
+      }
     })
     child.stdout?.pipe(process.stdout)
     let stderrTail = ''
@@ -221,6 +239,11 @@ export class Supervisor {
     child.on('exit', (code) => {
       instance.exitCode = code ?? undefined
       this.children.delete(instance.id)
+      // Release the loopback port guard as soon as the main's process is gone
+      // (explicit stop, restart, and crash all funnel through this handler).
+      if (instance.role === 'main' && instance.port !== undefined) {
+        this.portGuard?.remove(instance.port)
+      }
       const map = instance.role === 'main' ? this.mains : this.watchdogs
       // Only act if this instance is still the current one (avoid a stale
       // exit handler touching a freshly restarted instance).
