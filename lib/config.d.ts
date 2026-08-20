@@ -55,7 +55,7 @@ export interface ConfigOverrides {
     sessionTtlSeconds?: number | string;
     maxUploadBytes?: number | string;
     restartBackoffMs?: number | string;
-    isolationMode?: IsolationMode;
+    isolationMode?: IsolationMode | string;
     spawnAsUserCommand?: string[];
     baseUid?: number | string;
     baseDomain?: string;

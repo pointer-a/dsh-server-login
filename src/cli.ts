@@ -34,6 +34,7 @@ Server options:
   --log-level <l>   Pino log level. Default "info".
   --secure-cookies  Set the Secure flag on session cookies (behind HTTPS).
   --session-ttl <s> Session lifetime in seconds. Default 604800 (7 days).
+  --isolation-mode <m> Isolation tier: "soft" or "account" (Linux, needs root). Default "soft".
   -h, --help        Show this help.
 
 bootstrap-admin options:
@@ -61,6 +62,7 @@ function toOverrides(values: ParsedValues): ConfigOverrides {
     secureCookies: values['secure-cookies'] === true ? true : undefined,
     sessionTtlSeconds: str(values['session-ttl']),
     maxUploadBytes: str(values['max-upload']),
+    isolationMode: str(values['isolation-mode']),
   }
 }
 
@@ -110,6 +112,7 @@ async function runServer(args: string[]): Promise<void> {
       'secure-cookies': { type: 'boolean' },
       'session-ttl': { type: 'string' },
       'max-upload': { type: 'string' },
+      'isolation-mode': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   })

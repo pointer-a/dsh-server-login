@@ -63,7 +63,7 @@ export interface ConfigOverrides {
   sessionTtlSeconds?: number | string
   maxUploadBytes?: number | string
   restartBackoffMs?: number | string
-  isolationMode?: IsolationMode
+  isolationMode?: IsolationMode | string
   spawnAsUserCommand?: string[]
   baseUid?: number | string
   baseDomain?: string
@@ -118,6 +118,16 @@ function toBool(value: string | undefined, fallback: boolean): boolean {
   return value === 'true' || value === '1'
 }
 
+/** Parse an isolation-mode value, rejecting anything outside `soft`/`account`
+ * so a typo in the env var fails loudly at startup instead of silently
+ * falling back to `soft` isolation. */
+function toIsolationMode(value: string | undefined): IsolationMode | undefined {
+  if (value === undefined) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'soft' || normalized === 'account') return normalized
+  throw new Error(`invalid isolation mode "${value}" (expected "soft" or "account")`)
+}
+
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to
  * `~/.dsh-server-login` (always writable for dev); production sets
@@ -128,7 +138,10 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     overrides.dataRoot ?? process.env.DSH_SERVER_LOGIN_DATA_ROOT ?? join(homedir(), '.dsh-server-login')
   const port = overrides.port ?? process.env.DSH_SERVER_LOGIN_PORT ?? DEFAULT_PORT
   const dshBin = process.env.DSH_SERVER_LOGIN_DSH_BIN
-  const isolationMode = overrides.isolationMode ?? DEFAULT_ISOLATION_MODE
+  const isolationMode =
+    toIsolationMode(overrides.isolationMode) ??
+    toIsolationMode(process.env.DSH_SERVER_LOGIN_ISOLATION_MODE) ??
+    DEFAULT_ISOLATION_MODE
   return {
     host: overrides.host ?? DEFAULT_HOST,
     port: typeof port === 'number' ? port : Number(port),
