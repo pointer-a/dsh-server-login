@@ -8,6 +8,11 @@
  * same-host loopback connection (an INPUT rule would see the receiving DSH's
  * uid and block nothing selectively).
  *
+ * The REJECT is inserted at the *top* of OUTPUT (`-I OUTPUT 1`), not appended:
+ * iptables stops at the first match, so an earlier ACCEPT (ufw or a conntrack
+ * `ESTABLISHED,RELATED -j ACCEPT`) would otherwise swallow the packet before an
+ * appended `-A` REJECT is ever evaluated.
+ *
  * Linux + root only; opt in via `config.portGuard` and fail loud when enabled
  * on a host that cannot apply it.
  * @module dsh-server-login/supervisor/firewall
@@ -23,9 +28,13 @@ export interface PortGuard {
   remove(port: number): void
 }
 
-/** iptables arguments (excluding the executable) for one add/delete. */
-function ruleArgs(port: number, action: '-A' | '-D'): string[] {
-  return ['-t', 'filter', action, 'OUTPUT', '-p', 'tcp', '--dport', String(port), '-m', 'owner', '!', '--uid-owner', '0', '-j', 'REJECT']
+/** iptables arguments (excluding the executable) for one insert/delete.
+ * Install inserts at position 1 (`-I OUTPUT 1`) to stay ahead of any earlier
+ * ACCEPT (ufw / conntrack ESTABLISHED); delete matches by rule spec (`-D
+ * OUTPUT`), which works regardless of position. */
+function ruleArgs(port: number, action: '-I' | '-D'): string[] {
+  const insert = action === '-I' ? ['1'] : []
+  return ['-t', 'filter', action, 'OUTPUT', ...insert, '-p', 'tcp', '--dport', String(port), '-m', 'owner', '!', '--uid-owner', '0', '-j', 'REJECT']
 }
 
 /** Whether this process can manage the loopback OUTPUT guard. */
@@ -48,7 +57,9 @@ export function createPortGuard(enabled: boolean): PortGuard | undefined {
   return {
     install(port) {
       if (guarded.has(port)) return
-      execFileSync('iptables', ruleArgs(port, '-A'))
+      // Insert at position 1 so an earlier ACCEPT (ufw / conntrack) can't
+      // swallow the packet before the REJECT is evaluated.
+      execFileSync('iptables', ruleArgs(port, '-I'))
       guarded.add(port)
     },
     remove(port) {
