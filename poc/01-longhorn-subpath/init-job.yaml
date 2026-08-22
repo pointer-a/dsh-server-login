@@ -1,0 +1,32 @@
+# §4.9 步骤 2：非 root init Job，目标 uid 建用户目录并 chmod 0700。
+# 验证非 root uid 能在 PVC 根写目录（依赖 bootstrap 的 chmod 1777）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dsh-u1-init
+  namespace: dsh-poc
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100001
+        fsGroup: 100001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: init
+          image: busybox:1.36
+          command: ["sh", "-c", "mkdir -p /mnt/u1/ws /mnt/u1/home && chmod 0700 /mnt/u1 && ls -ldn /mnt/u1"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: data
+              mountPath: /mnt
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: dsh-users

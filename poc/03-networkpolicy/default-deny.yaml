@@ -1,0 +1,10 @@
+# 命名空间内默认拒绝所有 ingress（§3.5 / §4.4）。依赖 CNI 强制（Cilium）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: dsh-poc
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  # 空 ingress = 拒绝一切入站

@@ -1,0 +1,18 @@
+# 仅控制面（app=dsh-orchestrator）可入 DSH Pod 的 8081（§4.4 单向放行）。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-controlplane-to-dsh
+  namespace: dsh-poc
+spec:
+  podSelector:
+    matchLabels:
+      app: dsh
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dsh-orchestrator
+      ports:
+        - port: 8081

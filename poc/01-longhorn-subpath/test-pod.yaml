@@ -1,0 +1,35 @@
+# §4.3：subPath 叶子挂载 + runAsUser，验证目标 uid 能读写自己的目录。
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dsh-u1-test
+  namespace: dsh-poc
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100001
+    fsGroup: 100001
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: test
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo hello > /var/lib/dsh-server-login/users/u1/ws/probe.txt
+          cat /var/lib/dsh-server-login/users/u1/ws/probe.txt
+          ls -ldn /var/lib/dsh-server-login/users/u1
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: { drop: ["ALL"] }
+      volumeMounts:
+        - name: data
+          mountPath: /var/lib/dsh-server-login/users/u1
+          subPath: u1
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: dsh-users

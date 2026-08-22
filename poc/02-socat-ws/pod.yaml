@@ -1,0 +1,38 @@
+# §4.3：dsh(loopback 8080) + socat sidecar(0.0.0.0:8081 → 127.0.0.1:8080)。
+# dsh 用一次性 node 镜像跑 fake-dsh.mjs（真实 DSH 不参与本 PoC）。
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dsh-ws-test
+  namespace: dsh-poc
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: dsh
+      image: node:22-alpine
+      command: ["node", "/app/fake-dsh.mjs"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: { drop: ["ALL"] }
+      volumeMounts:
+        - name: script
+          mountPath: /app
+    - name: sidecar
+      image: alpine/socat:1.8.0.0
+      args: ["TCP-LISTEN:8081,fork,reuseaddr", "TCP:127.0.0.1:8080"]
+      ports:
+        - containerPort: 8081
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        allowPrivilegeEscalation: false
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+  volumes:
+    - name: script
+      configMap:
+        name: fake-dsh

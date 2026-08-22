@@ -1,0 +1,17 @@
+# §4.5：CloudNativePG 3 实例，Longhorn RWO（每实例独立卷，复制由 PG 自身做）。
+# imageName 走 operator 默认镜像；若你的 operator 未设默认，取消注释并指定版本。
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: dsh-pg-poc
+  namespace: dsh-poc
+spec:
+  instances: 3
+  # imageName: ghcr.io/cloudnative-pg/postgresql:16.2
+  storage:
+    size: 1Gi
+    storageClass: longhorn
+  bootstrap:
+    initdb:
+      database: dsh
+      owner: dsh
