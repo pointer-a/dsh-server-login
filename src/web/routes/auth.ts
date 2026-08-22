@@ -10,18 +10,7 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
 import { deriveKey, encrypt } from '../../crypto.js'
-import {
-  audit,
-  createSession,
-  createUser,
-  deleteCredentialKey,
-  deleteSession,
-  findUserByUsername,
-  listCredentialKeys,
-  selectCredentialKey,
-  setCredentialKey,
-  toPublicUser,
-} from '../../db/repo.js'
+import { toPublicUser } from '../../db/types.js'
 import {
   clearSessionCookie,
   hashPassword,
@@ -67,8 +56,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     { schema: registerSchema, config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
     async (request, reply) => {
       const { username, password } = request.body as Credentials
-      const db = app.db
-      if (findUserByUsername(db, username) !== undefined) {
+      if ((await app.db.findUserByUsername(username)) !== undefined) {
         return reply.code(409).send({ error: 'username_taken' })
       }
       const id = randomUUID()
@@ -76,8 +64,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       mkdirSync(homeDir, { recursive: true })
       chmodSync(homeDir, 0o700)
       const passHash = await hashPassword(password)
-      createUser(db, { id, username, passHash, role: 'pending', homeDir })
-      audit(db, id, 'register', JSON.stringify({ username }))
+      await app.db.createUser({ id, username, passHash, role: 'pending', homeDir })
+      await app.db.audit(id, 'register', JSON.stringify({ username }))
       return reply.code(201).send({ user: { id, username, role: 'pending' } })
     },
   )
@@ -87,8 +75,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     { schema: loginSchema, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
     async (request, reply) => {
       const { username, password } = request.body as Credentials
-      const db = app.db
-      const user = findUserByUsername(db, username)
+      const user = await app.db.findUserByUsername(username)
       if (user === undefined || !(await verifyPassword(password, user.pass_hash))) {
         return reply.code(401).send({ error: 'invalid_credentials' })
       }
@@ -96,14 +83,14 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       if (user.role === 'disabled') return reply.code(403).send({ error: 'disabled' })
 
       const token = newSessionToken()
-      createSession(db, {
+      await app.db.createSession({
         tokenHash: hashSessionToken(token),
         userId: user.id,
         expiresAt: Date.now() + app.config.sessionTtlSeconds * 1000,
         ip: request.ip,
         userAgent: request.headers['user-agent'],
       })
-      audit(db, user.id, 'login', null)
+      await app.db.audit(user.id, 'login', null)
       reply.header(
         'set-cookie',
         sessionCookie(token, app.config.sessionTtlSeconds, app.config.secureCookies, app.config.cookieDomain),
@@ -114,7 +101,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/api/auth/logout', async (request, reply) => {
     const token = parseCookie(request.headers.cookie, 'sid')
-    if (token !== undefined) deleteSession(app.db, hashSessionToken(token))
+    if (token !== undefined) await app.db.deleteSession(hashSessionToken(token))
     reply.header('set-cookie', clearSessionCookie(app.config.secureCookies, app.config.cookieDomain))
     return { ok: true }
   })
@@ -134,7 +121,7 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   } as const
 
   app.get('/api/me/keys', { preHandler: requireAuth }, async (request) => ({
-    keys: listCredentialKeys(app.db, request.user!.id),
+    keys: await app.db.listCredentialKeys(request.user!.id),
   }))
 
   app.post('/api/me/keys', { preHandler: requireAuth, schema: keyAddSchema }, async (request, reply) => {
@@ -147,20 +134,24 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
     if (!/^[A-Za-z0-9\-_.]{1,256}$/.test(apiKey)) {
       return reply.code(400).send({ error: 'invalid_api_key' })
     }
-    const key = setCredentialKey(app.db, request.user!.id, cleanName, encrypt(apiKey, deriveKey(app.config.encryptionSecret)))
-    audit(app.db, request.user!.id, 'set_api_key', JSON.stringify({ name: cleanName }))
+    const key = await app.db.setCredentialKey(
+      request.user!.id,
+      cleanName,
+      encrypt(apiKey, deriveKey(app.config.encryptionSecret)),
+    )
+    await app.db.audit(request.user!.id, 'set_api_key', JSON.stringify({ name: cleanName }))
     return { key }
   })
 
   app.post('/api/me/keys/:id/select', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    if (!selectCredentialKey(app.db, request.user!.id, id)) return reply.code(404).send({ error: 'not_found' })
+    if (!(await app.db.selectCredentialKey(request.user!.id, id))) return reply.code(404).send({ error: 'not_found' })
     return { ok: true }
   })
 
   app.delete('/api/me/keys/:id', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    if (!deleteCredentialKey(app.db, request.user!.id, id)) return reply.code(404).send({ error: 'not_found' })
+    if (!(await app.db.deleteCredentialKey(request.user!.id, id))) return reply.code(404).send({ error: 'not_found' })
     return { ok: true }
   })
 }

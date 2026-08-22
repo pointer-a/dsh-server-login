@@ -13,10 +13,9 @@ import { chmodSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveConfig, type ConfigOverrides } from './config.js'
-import { openDatabase } from './db/connection.js'
-import { countAdmins, createUser } from './db/repo.js'
+import { createDbAdapter } from './db/index.js'
 import { hashPassword } from './web/auth.js'
-import { uidForUser } from './isolation.js'
+import { hashUid } from './isolation.js'
 import { buildServer } from './web/server.js'
 
 const HELP = `dsh-server-login — DSH server login orchestrator
@@ -83,10 +82,10 @@ async function bootstrapAdmin(args: string[]): Promise<void> {
     process.exit(2)
   }
   const config = resolveConfig({ dbPath: values.db, dataRoot: values['data-root'] })
-  const db = openDatabase(config.dbPath)
-  if (countAdmins(db) > 0) {
+  const db = await createDbAdapter(config)
+  if ((await db.countAdmins()) > 0) {
     console.error('an admin already exists; refusing to create a second one')
-    db.close()
+    await db.close()
     process.exit(1)
   }
   const id = randomUUID()
@@ -94,8 +93,8 @@ async function bootstrapAdmin(args: string[]): Promise<void> {
   mkdirSync(homeDir, { recursive: true })
   chmodSync(homeDir, 0o700)
   const passHash = await hashPassword(password)
-  createUser(db, { id, username, passHash, role: 'admin', homeDir })
-  db.close()
+  await db.createUser({ id, username, passHash, role: 'admin', homeDir })
+  await db.close()
   console.log(`admin "${username}" created (id: ${id})`)
 }
 
@@ -140,19 +139,24 @@ async function runServer(args: string[]): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
-function uidForUserCmd(args: string[]): void {
+async function uidForUserCmd(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { 'base-uid': { type: 'string' } },
+    options: { 'base-uid': { type: 'string' }, db: { type: 'string' } },
   })
   const userId = positionals[0]
   if (userId === undefined) {
-    console.error('usage: dsh-server-login uid-for-user <userId> [--base-uid N]')
+    console.error('usage: dsh-server-login uid-for-user <userId> [--db <path>] [--base-uid N]')
     process.exit(2)
   }
-  const baseUid = Number(values['base-uid'] ?? process.env.DSH_SERVER_LOGIN_BASE_UID ?? 100000)
-  console.log(uidForUser(userId, baseUid))
+  const dbPath = typeof values.db === 'string' ? values.db : undefined
+  const baseUid = typeof values['base-uid'] === 'string' ? values['base-uid'] : undefined
+  const config = resolveConfig({ dbPath, baseUid })
+  const db = await createDbAdapter(config)
+  const user = await db.findUserById(userId)
+  await db.close()
+  console.log(user?.uid ?? hashUid(userId, config.baseUid))
 }
 
 async function main(): Promise<void> {
@@ -162,7 +166,7 @@ async function main(): Promise<void> {
     return
   }
   if (first === 'uid-for-user') {
-    uidForUserCmd(rest)
+    await uidForUserCmd(rest)
     return
   }
   await runServer(process.argv.slice(2))

@@ -12,7 +12,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { Agent, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http'
 import { connect } from 'node:net'
-import { findSessionWithUser, findUserBySlug } from '../db/repo.js'
 import { hashSessionToken, parseCookie } from '../web/auth.js'
 import { requireAuth } from '../web/middleware/authn.js'
 
@@ -67,17 +66,17 @@ type SubdomainAccess = { port: number } | { error: string; code: number } | null
  * Resolve a subdomain Host to a DSH port, authenticating the caller: the session
  * cookie must belong to a non-disabled user whose username matches the subdomain.
  */
-function resolveSubdomainAccess(
+async function resolveSubdomainAccess(
   app: FastifyInstance,
   host: string | undefined,
   cookieHeader: string | undefined,
-): SubdomainAccess {
+): Promise<SubdomainAccess> {
   const slug = parseSubdomain(host, app.config.baseDomain)
   if (slug === null) return null
-  const target = findUserBySlug(app.db, slug)
+  const target = await app.db.findUserBySlug(slug)
   if (target === undefined) return { error: 'unknown_user', code: 404 }
   const token = parseCookie(cookieHeader, 'sid')
-  const session = token === undefined ? undefined : findSessionWithUser(app.db, hashSessionToken(token))
+  const session = token === undefined ? undefined : await app.db.findSessionWithUser(hashSessionToken(token))
   if (session === undefined || session.expiresAt <= Date.now() || session.user.role === 'disabled') {
     return { error: 'unauthorized', code: 401 }
   }
@@ -147,7 +146,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
 
   // Per-user subdomain: HTTP (intercept before normal routing).
   app.addHook('onRequest', async (request, reply) => {
-    const access = resolveSubdomainAccess(app, request.headers.host, request.headers.cookie)
+    const access = await resolveSubdomainAccess(app, request.headers.host, request.headers.cookie)
     if (access === null) return
     if ('error' in access) {
       reply.code(access.code).send({ error: access.error })
@@ -156,28 +155,31 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
     proxyHttp(request, reply, access.port, request.raw.url ?? '/')
   })
 
-  // Per-user subdomain: WebSocket upgrade tunnel.
+  // Per-user subdomain: WebSocket upgrade tunnel. Auth is async (DB lookup), so
+  // the raw `upgrade` callback defers to an async IIFE before deciding to tunnel.
   app.server.on('upgrade', (req, socket, head) => {
-    const access = resolveSubdomainAccess(app, req.headers.host, req.headers.cookie)
-    if (access === null || 'error' in access) {
-      socket.destroy()
-      return
-    }
-    const upstream = connect({ host: '127.0.0.1', port: access.port })
-    upstream.on('connect', () => {
-      const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
-      for (let i = 0; i < req.rawHeaders.length; i += 2) {
-        const name = (req.rawHeaders[i] ?? '').toLowerCase()
-        if (name === 'host' || STRIP_HEADERS.has(name)) continue
-        lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`)
+    void (async () => {
+      const access = await resolveSubdomainAccess(app, req.headers.host, req.headers.cookie)
+      if (access === null || 'error' in access) {
+        socket.destroy()
+        return
       }
-      lines.push(`Host: 127.0.0.1:${access.port}`)
-      upstream.write(lines.join('\r\n') + '\r\n\r\n')
-      if (head !== undefined && head.length > 0) upstream.write(head)
-      socket.pipe(upstream)
-      upstream.pipe(socket)
-    })
-    upstream.on('error', () => socket.destroy())
-    socket.on('error', () => upstream.destroy())
+      const upstream = connect({ host: '127.0.0.1', port: access.port })
+      upstream.on('connect', () => {
+        const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
+        for (let i = 0; i < req.rawHeaders.length; i += 2) {
+          const name = (req.rawHeaders[i] ?? '').toLowerCase()
+          if (name === 'host' || STRIP_HEADERS.has(name)) continue
+          lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`)
+        }
+        lines.push(`Host: 127.0.0.1:${access.port}`)
+        upstream.write(lines.join('\r\n') + '\r\n\r\n')
+        if (head !== undefined && head.length > 0) upstream.write(head)
+        socket.pipe(upstream)
+        upstream.pipe(socket)
+      })
+      upstream.on('error', () => socket.destroy())
+      socket.on('error', () => upstream.destroy())
+    })()
   })
 }

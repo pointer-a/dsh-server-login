@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { buildServer } from '../lib/web/server.js'
 import { resolveConfig } from '../lib/config.js'
-import { createUser } from '../lib/db/repo.js'
 import { hashPassword } from '../lib/web/auth.js'
 
 function assert(condition, message) {
@@ -18,7 +17,7 @@ const app = await buildServer(resolveConfig({ port: 0, dbPath: ':memory:', dataR
 await app.listen({ port: 0 })
 const base = `http://127.0.0.1:${app.server.address().port}`
 
-createUser(app.db, {
+await app.db.createUser({
   id: 'u1',
   username: 'bob',
   passHash: await hashPassword('bobpass123'),

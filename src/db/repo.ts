@@ -1,5 +1,7 @@
 /**
- * User / session / audit data access over the SQLite connection.
+ * Synchronous SQLite data access. This is the raw layer behind
+ * {@link SqliteAdapter}; the route layer must never import these functions
+ * directly — it goes through {@link DbAdapter} so Postgres can be substituted.
  *
  * All access is parameterized (prepared statements). Functions take the
  * connection explicitly so they stay free of Fastify/app state and testable.
@@ -9,136 +11,84 @@
 import { randomUUID } from 'node:crypto'
 import type { Database } from './connection.js'
 import { prepare } from './prepared.js'
+import {
+  toDomain,
+  toPublicUser,
+  toSession,
+  toUser,
+  toWorkspace,
+  type CredentialKey,
+  type CreateSessionInput,
+  type CreateUserInput,
+  type Domain,
+  type PublicUser,
+  type SessionRow,
+  type SessionUser,
+  type User,
+  type UserRole,
+  type Workspace,
+} from './types.js'
 
-export type UserRole = 'admin' | 'pending' | 'active' | 'disabled'
+const USER_COLS = 'id, username, pass_hash, role, home_dir, api_key_ref, created_at, approved_by, uid'
+const DOMAIN_COLS = 'id, user_id, domain, verified, nginx_config, updated_at'
 
-/** A full user row, including secrets (never serialized to clients). */
-export interface User {
-  id: string
-  username: string
-  pass_hash: string
-  role: UserRole
-  home_dir: string
-  api_key_ref: string | null
-  created_at: number
-  approved_by: string | null
-}
-
-/** The user shape safe to return over the wire. */
-export interface PublicUser {
-  id: string
-  username: string
-  role: UserRole
-  createdAt: number
-}
-
-/** A persisted login session (token stored only as its hash). */
-export interface SessionRow {
-  token_hash: string
-  user_id: string
-  created_at: number
-  expires_at: number
-  ip: string | null
-  user_agent: string | null
-}
-
-const USER_COLS = 'id, username, pass_hash, role, home_dir, api_key_ref, created_at, approved_by'
-
-function toUser(row: Record<string, unknown>): User {
-  return {
-    id: row.id as string,
-    username: row.username as string,
-    pass_hash: row.pass_hash as string,
-    role: row.role as UserRole,
-    home_dir: row.home_dir as string,
-    api_key_ref: (row.api_key_ref as string | null) ?? null,
-    created_at: row.created_at as number,
-    approved_by: (row.approved_by as string | null) ?? null,
-  }
-}
-
-function toSession(row: Record<string, unknown>): SessionRow {
-  return {
-    token_hash: row.token_hash as string,
-    user_id: row.user_id as string,
-    created_at: row.created_at as number,
-    expires_at: row.expires_at as number,
-    ip: (row.ip as string | null) ?? null,
-    user_agent: (row.user_agent as string | null) ?? null,
-  }
-}
-
-export function toPublicUser(user: User): PublicUser {
-  return { id: user.id, username: user.username, role: user.role, createdAt: user.created_at }
-}
-
-export interface CreateUserInput {
-  id: string
-  username: string
-  passHash: string
-  role: UserRole
-  homeDir: string
-}
-
-export function createUser(db: Database, input: CreateUserInput): User {
+export function createUser(db: Database, input: CreateUserInput, baseUid: number): User {
   const createdAt = Date.now()
-  prepare(db,
-    'INSERT INTO users (id, username, pass_hash, role, home_dir, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(input.id, input.username, input.passHash, input.role, input.homeDir, createdAt)
-  return {
-    id: input.id,
-    username: input.username,
-    pass_hash: input.passHash,
-    role: input.role,
-    home_dir: input.homeDir,
-    api_key_ref: null,
-    created_at: createdAt,
-    approved_by: null,
-  }
+  return db.transaction((): User => {
+    const info = prepare(db,
+      'INSERT INTO users (id, username, pass_hash, role, home_dir, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(input.id, input.username, input.passHash, input.role, input.homeDir, createdAt)
+    // SQLite's implicit rowid is the per-user incrementing integer; uid = baseUid + it.
+    const uid = baseUid + Number(info.lastInsertRowid)
+    prepare(db, 'UPDATE users SET uid = ? WHERE id = ?').run(uid, input.id)
+    return {
+      id: input.id,
+      username: input.username,
+      pass_hash: input.passHash,
+      role: input.role,
+      home_dir: input.homeDir,
+      api_key_ref: null,
+      created_at: createdAt,
+      approved_by: null,
+      uid,
+    }
+  })()
 }
 
 export function findUserByUsername(db: Database, username: string): User | undefined {
-  const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE username = ?`).get(username)
+  const row = prepare(db, `SELECT ${USER_COLS} FROM users WHERE username = ?`).get(username)
   return row ? toUser(row as Record<string, unknown>) : undefined
 }
 
 /** Case-insensitive username lookup (for subdomain routing). */
 export function findUserBySlug(db: Database, slug: string): User | undefined {
-  const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE LOWER(username) = ?`).get(slug.toLowerCase())
+  const row = prepare(db, `SELECT ${USER_COLS} FROM users WHERE LOWER(username) = ?`).get(slug.toLowerCase())
   return row ? toUser(row as Record<string, unknown>) : undefined
 }
 
 export function findUserById(db: Database, id: string): User | undefined {
-  const row = prepare(db,`SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id)
+  const row = prepare(db, `SELECT ${USER_COLS} FROM users WHERE id = ?`).get(id)
   return row ? toUser(row as Record<string, unknown>) : undefined
 }
 
 export function listPublicUsers(db: Database): PublicUser[] {
-  const rows = prepare(db,`SELECT ${USER_COLS} FROM users ORDER BY created_at ASC`).all() as Array<
+  const rows = prepare(db, `SELECT ${USER_COLS} FROM users ORDER BY created_at ASC`).all() as Array<
     Record<string, unknown>
   >
   return rows.map((row) => toPublicUser(toUser(row)))
 }
 
 export function countAdmins(db: Database): number {
-  const row = prepare(db,`SELECT COUNT(*) AS n FROM users WHERE role = 'admin'`).get() as { n: number }
+  const row = prepare(db, `SELECT COUNT(*) AS n FROM users WHERE role = 'admin'`).get() as { n: number }
   return row.n
 }
 
 export function setUserRole(db: Database, id: string, role: UserRole, approvedBy?: string): boolean {
   const info =
     approvedBy === undefined
-      ? prepare(db,'UPDATE users SET role = ? WHERE id = ?').run(role, id)
-      : prepare(db,'UPDATE users SET role = ?, approved_by = ? WHERE id = ?').run(role, approvedBy, id)
+      ? prepare(db, 'UPDATE users SET role = ? WHERE id = ?').run(role, id)
+      : prepare(db, 'UPDATE users SET role = ?, approved_by = ? WHERE id = ?').run(role, approvedBy, id)
   return info.changes > 0
-}
-
-export interface CreateSessionInput {
-  tokenHash: string
-  userId: string
-  expiresAt: number
-  ip?: string
-  userAgent?: string
 }
 
 export function createSession(db: Database, input: CreateSessionInput): void {
@@ -154,40 +104,21 @@ export function findSession(db: Database, tokenHash: string): SessionRow | undef
 }
 
 export function deleteSession(db: Database, tokenHash: string): void {
-  prepare(db,'DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)
+  prepare(db, 'DELETE FROM sessions WHERE token_hash = ?').run(tokenHash)
 }
 
 export function deleteUserSessions(db: Database, userId: string): void {
-  prepare(db,'DELETE FROM sessions WHERE user_id = ?').run(userId)
+  prepare(db, 'DELETE FROM sessions WHERE user_id = ?').run(userId)
 }
 
 /** Append an audit entry. `actor` is a user id or `'system'`. */
 export function audit(db: Database, actor: string | null, action: string, detail?: string | null): void {
-  prepare(db,'INSERT INTO audit_log (ts, actor, action, detail) VALUES (?, ?, ?, ?)').run(
+  prepare(db, 'INSERT INTO audit_log (ts, actor, action, detail) VALUES (?, ?, ?, ?)').run(
     Date.now(),
     actor,
     action,
     detail ?? null,
   )
-}
-
-/** A per-user project folder (workspace) row. */
-export interface Workspace {
-  id: string
-  userId: string
-  name: string
-  relPath: string
-  createdAt: number
-}
-
-function toWorkspace(row: Record<string, unknown>): Workspace {
-  return {
-    id: row.id as string,
-    userId: row.user_id as string,
-    name: row.name as string,
-    relPath: row.rel_path as string,
-    createdAt: row.created_at as number,
-  }
 }
 
 export function findWorkspaceByPath(db: Database, userId: string, relPath: string): Workspace | undefined {
@@ -203,7 +134,7 @@ export function getOrCreateWorkspace(db: Database, userId: string, relPath: stri
   const id = randomUUID()
   const segments = relPath.split('/').filter(Boolean)
   const name = segments.at(-1) ?? 'root'
-  prepare(db,'INSERT INTO workspaces (id, user_id, name, rel_path, created_at) VALUES (?, ?, ?, ?, ?)').run(
+  prepare(db, 'INSERT INTO workspaces (id, user_id, name, rel_path, created_at) VALUES (?, ?, ?, ?, ?)').run(
     id,
     userId,
     name,
@@ -220,7 +151,7 @@ export function setFolderPlugins(
   selections: ReadonlyArray<{ id: string; enabled: boolean }>,
 ): void {
   const tx = db.transaction(() => {
-    prepare(db,'DELETE FROM folder_plugins WHERE workspace_id = ?').run(workspaceId)
+    prepare(db, 'DELETE FROM folder_plugins WHERE workspace_id = ?').run(workspaceId)
     const insert = prepare(db,
       'INSERT INTO folder_plugins (workspace_id, plugin_id, enabled, updated_at) VALUES (?, ?, ?, ?)',
     )
@@ -238,41 +169,18 @@ export function getEnabledPluginIds(db: Database, workspaceId: string): string[]
   return rows.map((row) => row.plugin_id)
 }
 
-/** A custom-domain row. */
-export interface Domain {
-  id: string
-  userId: string
-  domain: string
-  verified: number
-  nginxConfig: string | null
-  updatedAt: number
-}
-
-function toDomain(row: Record<string, unknown>): Domain {
-  return {
-    id: row.id as string,
-    userId: row.user_id as string,
-    domain: row.domain as string,
-    verified: row.verified as number,
-    nginxConfig: (row.nginx_config as string | null) ?? null,
-    updatedAt: row.updated_at as number,
-  }
-}
-
-const DOMAIN_COLS = 'id, user_id, domain, verified, nginx_config, updated_at'
-
 export function findDomainByUser(db: Database, userId: string): Domain | undefined {
-  const row = prepare(db,`SELECT ${DOMAIN_COLS} FROM domains WHERE user_id = ?`).get(userId)
+  const row = prepare(db, `SELECT ${DOMAIN_COLS} FROM domains WHERE user_id = ?`).get(userId)
   return row ? toDomain(row as Record<string, unknown>) : undefined
 }
 
 export function findDomainById(db: Database, id: string): Domain | undefined {
-  const row = prepare(db,`SELECT ${DOMAIN_COLS} FROM domains WHERE id = ?`).get(id)
+  const row = prepare(db, `SELECT ${DOMAIN_COLS} FROM domains WHERE id = ?`).get(id)
   return row ? toDomain(row as Record<string, unknown>) : undefined
 }
 
 export function listDomains(db: Database): Domain[] {
-  const rows = prepare(db,`SELECT ${DOMAIN_COLS} FROM domains ORDER BY updated_at DESC`).all() as Array<
+  const rows = prepare(db, `SELECT ${DOMAIN_COLS} FROM domains ORDER BY updated_at DESC`).all() as Array<
     Record<string, unknown>
   >
   return rows.map((row) => toDomain(row))
@@ -280,7 +188,7 @@ export function listDomains(db: Database): Domain[] {
 
 /** Upsert a user's custom domain (resetting `verified` to 0). */
 export function upsertDomain(db: Database, userId: string, domain: string, nginxConfig: string): Domain {
-  prepare(db,`
+  prepare(db, `
     INSERT INTO domains (id, user_id, domain, verified, nginx_config, updated_at)
     VALUES (?, ?, ?, 0, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
@@ -290,14 +198,6 @@ export function upsertDomain(db: Database, userId: string, domain: string, nginx
       updated_at = excluded.updated_at
   `).run(randomUUID(), userId, domain, nginxConfig, Date.now())
   return findDomainByUser(db, userId)!
-}
-
-/** A named per-user credential key (secret never exposed). */
-export interface CredentialKey {
-  id: string
-  name: string
-  enabled: boolean
-  updatedAt: number
 }
 
 /** List a user's named credential keys (metadata only). */
@@ -366,21 +266,26 @@ export function setDomainVerified(db: Database, id: string, verified: boolean): 
   return info.changes > 0
 }
 
-/** A session joined with its user, for the authn hot path (one query). */
-export interface SessionUser {
-  expiresAt: number
-  user: User
-}
-
 /** Look up a session and its user in a single join. */
 export function findSessionWithUser(db: Database, tokenHash: string): SessionUser | undefined {
   const row = prepare(
     db,
-    `SELECT u.id, u.username, u.pass_hash, u.role, u.home_dir, u.api_key_ref, u.created_at, u.approved_by,
+    `SELECT u.id, u.username, u.pass_hash, u.role, u.home_dir, u.api_key_ref, u.created_at, u.approved_by, u.uid,
             s.expires_at
      FROM sessions s JOIN users u ON s.user_id = u.id
      WHERE s.token_hash = ?`,
   ).get(tokenHash) as Record<string, unknown> | undefined
   if (row === undefined) return undefined
   return { expiresAt: row.expires_at as number, user: toUser(row) }
+}
+
+/** Assign a Linux uid to a user (legacy backfill). */
+export function setUserUid(db: Database, userId: string, uid: number): void {
+  prepare(db, 'UPDATE users SET uid = ? WHERE id = ?').run(uid, userId)
+}
+
+/** Ids of users whose uid is still null (legacy rows awaiting backfill). */
+export function listUsersWithoutUid(db: Database): string[] {
+  const rows = prepare(db, 'SELECT id FROM users WHERE uid IS NULL').all() as Array<{ id: string }>
+  return rows.map((row) => row.id)
 }

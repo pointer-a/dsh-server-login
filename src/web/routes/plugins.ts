@@ -11,7 +11,6 @@ import { requireAuth } from '../middleware/authn.js'
 import { resolveWithinRoot } from '../middleware/fs-guard.js'
 import { listInstalledPlugins } from '../../fs/plugins.js'
 import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
-import { findWorkspaceByPath, getEnabledPluginIds, getOrCreateWorkspace, setFolderPlugins } from '../../db/repo.js'
 
 const selectSchema = {
   body: {
@@ -49,8 +48,8 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     } catch {
       return reply.code(400).send({ error: 'bad_path' })
     }
-    const workspace = findWorkspaceByPath(app.db, user.id, folder)
-    const enabled = workspace === undefined ? [] : getEnabledPluginIds(app.db, workspace.id)
+    const workspace = await app.db.findWorkspaceByPath(user.id, folder)
+    const enabled = workspace === undefined ? [] : await app.db.getEnabledPluginIds(workspace.id)
     return {
       plugins: listInstalledPlugins(app.config, user.id).map((plugin) => ({ ...plugin, enabled: enabled.includes(plugin.id) })),
     }
@@ -69,8 +68,8 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     // Allowlist: only persist ids the user actually has installed.
     const catalogIds = new Set(listInstalledPlugins(app.config, user.id).map((plugin) => plugin.id))
     const filtered = plugins.filter((plugin) => catalogIds.has(plugin.id))
-    const workspace = getOrCreateWorkspace(app.db, user.id, folder)
-    setFolderPlugins(app.db, workspace.id, filtered)
+    const workspace = await app.db.getOrCreateWorkspace(user.id, folder)
+    await app.db.setFolderPlugins(workspace.id, filtered)
     return { ok: true }
   })
 }

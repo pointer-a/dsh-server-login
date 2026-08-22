@@ -6,7 +6,7 @@
 import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { runMigrations } from './schema.js'
+import { runSqliteMigrations } from './schema.js'
 
 /** The better-sqlite3 instance type. */
 export type Database = Database.Database
@@ -23,6 +23,6 @@ export function openDatabase(path: string): Database {
   const db: Database = new Database(path)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
-  runMigrations(db)
+  runSqliteMigrations(db)
   return db
 }

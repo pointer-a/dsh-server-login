@@ -6,41 +6,40 @@
 
 import type { FastifyPluginAsync } from 'fastify'
 import { requireAdmin } from '../middleware/authn.js'
-import { audit, deleteUserSessions, findUserById, listPublicUsers, setUserRole } from '../../db/repo.js'
 
 export const adminRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/admin/users', { preHandler: requireAdmin }, async () => ({
-    users: listPublicUsers(app.db),
+    users: await app.db.listPublicUsers(),
   }))
 
   app.post('/api/admin/users/:id/approve', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const user = findUserById(app.db, id)
+    const user = await app.db.findUserById(id)
     if (user === undefined) return reply.code(404).send({ error: 'not_found' })
     if (user.role !== 'pending') return reply.code(409).send({ error: 'not_pending' })
-    setUserRole(app.db, id, 'active', request.user?.id)
-    audit(app.db, request.user?.id ?? null, 'approve', JSON.stringify({ userId: id }))
+    await app.db.setUserRole(id, 'active', request.user?.id)
+    await app.db.audit(request.user?.id ?? null, 'approve', JSON.stringify({ userId: id }))
     return { ok: true }
   })
 
   app.post('/api/admin/users/:id/disable', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const user = findUserById(app.db, id)
+    const user = await app.db.findUserById(id)
     if (user === undefined) return reply.code(404).send({ error: 'not_found' })
     if (user.role === 'admin') return reply.code(409).send({ error: 'cannot_disable_admin' })
-    setUserRole(app.db, id, 'disabled', request.user?.id)
-    deleteUserSessions(app.db, id)
-    audit(app.db, request.user?.id ?? null, 'disable', JSON.stringify({ userId: id }))
+    await app.db.setUserRole(id, 'disabled', request.user?.id)
+    await app.db.deleteUserSessions(id)
+    await app.db.audit(request.user?.id ?? null, 'disable', JSON.stringify({ userId: id }))
     return { ok: true }
   })
 
   app.post('/api/admin/users/:id/enable', { preHandler: requireAdmin }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const user = findUserById(app.db, id)
+    const user = await app.db.findUserById(id)
     if (user === undefined) return reply.code(404).send({ error: 'not_found' })
     if (user.role !== 'disabled') return reply.code(409).send({ error: 'not_disabled' })
-    setUserRole(app.db, id, 'active', request.user?.id)
-    audit(app.db, request.user?.id ?? null, 'enable', JSON.stringify({ userId: id }))
+    await app.db.setUserRole(id, 'active', request.user?.id)
+    await app.db.audit(request.user?.id ?? null, 'enable', JSON.stringify({ userId: id }))
     return { ok: true }
   })
 }

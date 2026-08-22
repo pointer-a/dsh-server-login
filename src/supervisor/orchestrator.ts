@@ -14,7 +14,6 @@ import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
-import { uidForUser } from '../isolation.js'
 import { createPortGuard, type PortGuard } from './firewall.js'
 import { findFreePort, scrubEnv } from './spawn.js'
 
@@ -67,7 +66,9 @@ export class Supervisor {
   constructor(
     private readonly config: ServerConfig,
     /** Resolve the user's own API key (decrypted); null = user has none. */
-    private readonly resolveApiKey: (userId: string) => string | null,
+    private readonly resolveApiKey: (userId: string) => Promise<string | null>,
+    /** Resolve the user's assigned Linux uid (falls back to hash when unset). */
+    private readonly resolveUid: (userId: string) => Promise<number>,
   ) {
     this.portGuard = createPortGuard(config.portGuard)
   }
@@ -129,10 +130,10 @@ export class Supervisor {
     return join(this.config.dataRoot, 'users', userId, 'handoff.json')
   }
 
-  private baseEnv(userId: string): Record<string, string> {
+  private async baseEnv(userId: string): Promise<Record<string, string>> {
     const home = join(this.config.dataRoot, 'users', userId, 'home')
     const workspace = join(this.config.dataRoot, 'users', userId, 'ws')
-    const apiKey = this.resolveApiKey(userId)
+    const apiKey = await this.resolveApiKey(userId)
     return {
       ...scrubEnv(process.env),
       // HOME drives the child's directory picker default (homedir()); point it
@@ -173,7 +174,7 @@ export class Supervisor {
     }
 
     const env: Record<string, string> = {
-      ...this.baseEnv(userId),
+      ...(await this.baseEnv(userId)),
       DSH_SERVER_LOGIN_ROLE: role,
       DSH_SERVER_LOGIN_HANDOFF_PATH: this.handoffPath(userId), // both roles: main writes, watchdog reads
     }
@@ -181,23 +182,23 @@ export class Supervisor {
       env.DSH_SERVER_LOGIN_PORT = String(port)
     }
 
-    const child = this.spawnAsUser(userId, command, [...args, ...launchArgs], { cwd: folder, env })
+    const child = await this.spawnAsUser(userId, command, [...args, ...launchArgs], { cwd: folder, env })
     this.trackChild(userId, instance, child)
     return instance
   }
 
   /** Spawn the child, optionally through the account-level setuid wrapper. */
-  private spawnAsUser(
+  private async spawnAsUser(
     userId: string,
     command: string,
     args: string[],
     options: { cwd: string; env: Record<string, string> },
-  ): ChildProcess {
+  ): Promise<ChildProcess> {
     const stdio: StdioOptions = ['ignore', 'pipe', 'pipe']
     if (this.config.isolationMode !== 'account') {
       return spawn(command, args, { ...options, stdio })
     }
-    const uid = uidForUser(userId, this.config.baseUid)
+    const uid = await this.resolveUid(userId)
     const prefix = this.config.spawnAsUserCommand.map((part) =>
       part.replaceAll('{UID}', String(uid)).replaceAll('{GID}', String(uid)),
     )

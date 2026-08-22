@@ -9,9 +9,9 @@ import fastifyStatic from '@fastify/static'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import type { ServerConfig } from '../config.js'
-import { openDatabase, type Database } from '../db/connection.js'
-import { getEnabledCredentialKeyRef, type PublicUser } from '../db/repo.js'
+import { createDbAdapter, type DbAdapter, type PublicUser } from '../db/index.js'
 import { decrypt, deriveKey } from '../crypto.js'
+import { hashUid } from '../isolation.js'
 import { Supervisor } from '../supervisor/orchestrator.js'
 import { registerDshProxy } from '../supervisor/proxy.js'
 import { rateLimit } from './middleware/rate-limit.js'
@@ -24,7 +24,7 @@ import { domainRoutes } from './routes/domain.js'
 
 declare module 'fastify' {
   interface FastifyInstance {
-    db: Database
+    db: DbAdapter
     config: ServerConfig
     supervisor: Supervisor
   }
@@ -41,17 +41,24 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../../web')
  * @param config - resolved runtime configuration.
  */
 export async function buildServer(config: ServerConfig): Promise<FastifyInstance> {
-  const db = openDatabase(config.dbPath)
+  const db = await createDbAdapter(config)
   const encryptionKey = deriveKey(config.encryptionSecret)
-  const supervisor = new Supervisor(config, (userId) => {
-    const ref = getEnabledCredentialKeyRef(db, userId)
-    if (ref === null) return null
-    try {
-      return decrypt(ref, encryptionKey)
-    } catch {
-      return null // corrupt ref — treat as unset, let the user re-enter it
-    }
-  })
+  const supervisor = new Supervisor(
+    config,
+    async (userId) => {
+      const ref = await db.getEnabledCredentialKeyRef(userId)
+      if (ref === null) return null
+      try {
+        return decrypt(ref, encryptionKey)
+      } catch {
+        return null // corrupt ref — treat as unset, let the user re-enter it
+      }
+    },
+    async (userId) => {
+      const user = await db.findUserById(userId)
+      return user?.uid ?? hashUid(userId, config.baseUid)
+    },
+  )
 
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -70,7 +77,7 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
 
   app.addHook('onClose', async () => {
     supervisor.teardown()
-    db.close()
+    await db.close()
   })
 
   // Rate limiting first so auth/admin surfaces are covered by default.

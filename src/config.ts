@@ -21,6 +21,8 @@ export interface ServerConfig {
   port: number
   /** SQLite database path. */
   dbPath: string
+  /** Postgres connection string; when set, the DB backend is Postgres (k8s/HA). */
+  dbUrl?: string
   /** Root under which per-user homes (`users/<id>/home`) and workspaces live. */
   dataRoot: string
   /** Argv used to launch a child DSH; first element is the executable. */
@@ -58,6 +60,7 @@ export interface ConfigOverrides {
   host?: string
   port?: string | number
   dbPath?: string
+  dbUrl?: string
   dataRoot?: string
   dshCommand?: string[]
   logLevel?: string
@@ -149,6 +152,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     host: overrides.host ?? DEFAULT_HOST,
     port: typeof port === 'number' ? port : Number(port),
     dbPath: overrides.dbPath ?? join(dataRoot, 'server-login.db'),
+    dbUrl: overrides.dbUrl ?? process.env.DSH_SERVER_LOGIN_DB_URL,
     dataRoot,
     dshCommand: overrides.dshCommand ?? (dshBin !== undefined ? [dshBin] : DEFAULT_DSH_COMMAND),
     logLevel: overrides.logLevel ?? DEFAULT_LOG_LEVEL,

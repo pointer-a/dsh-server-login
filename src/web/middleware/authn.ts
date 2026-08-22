@@ -9,7 +9,7 @@
  */
 
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { findSessionWithUser, toPublicUser } from '../../db/repo.js'
+import { toPublicUser } from '../../db/types.js'
 import { hashSessionToken, parseCookie } from '../auth.js'
 
 /** Resolve the session cookie into `request.user`, or reject 401. */
@@ -19,7 +19,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
     reply.code(401).send({ error: 'unauthorized' })
     return
   }
-  const row = findSessionWithUser(request.server.db, hashSessionToken(token))
+  const row = await request.server.db.findSessionWithUser(hashSessionToken(token))
   if (row === undefined || row.expiresAt <= Date.now() || row.user.role === 'disabled') {
     reply.code(401).send({ error: 'unauthorized' })
     return

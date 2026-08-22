@@ -2,7 +2,6 @@
 // cannot log in while pending, approve them, then verify login + /me.
 import { buildServer } from '../lib/web/server.js'
 import { resolveConfig } from '../lib/config.js'
-import { createUser } from '../lib/db/repo.js'
 import { hashPassword } from '../lib/web/auth.js'
 
 function assert(condition, message) {
@@ -14,7 +13,7 @@ await app.listen({ port: 0 })
 const base = `http://127.0.0.1:${app.server.address().port}`
 
 // Seed the first admin directly (what `bootstrap-admin` does).
-createUser(app.db, {
+await app.db.createUser({
   id: 'admin-1',
   username: 'admin',
   passHash: await hashPassword('adminpass123'),

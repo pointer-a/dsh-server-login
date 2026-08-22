@@ -6,8 +6,6 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildServer } from '../lib/web/server.js'
 import { resolveConfig } from '../lib/config.js'
-import { uidForUser } from '../lib/isolation.js'
-import { createUser } from '../lib/db/repo.js'
 import { hashPassword } from '../lib/web/auth.js'
 
 function assert(condition, message) {
@@ -33,7 +31,7 @@ const app = await buildServer(
 await app.listen({ port: 0 })
 const base = `http://127.0.0.1:${app.server.address().port}`
 
-createUser(app.db, {
+await app.db.createUser({
   id: 'u1',
   username: 'gina',
   passHash: await hashPassword('ginapass123'),
@@ -75,9 +73,9 @@ try {
     }
     await sleep(100)
   }
-  const expected = uidForUser('u1', 50000)
+  const expected = (await app.db.findUserById('u1')).uid
   console.log('setuid   ->', uid, '(expected', expected + ')')
-  assert(uid === String(expected), 'setuid wrapper received the deterministic uid')
+  assert(uid === String(expected), 'setuid wrapper received the DB-assigned uid')
 
   let proxyText
   for (let i = 0; i < 20; i++) {
