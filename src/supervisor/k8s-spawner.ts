@@ -265,6 +265,9 @@ export class K8sSpawner implements Spawner {
     await this.ensureFilesPod(n.filesPod, userId, uid)
     await this.ensureFilesService(n.filesService, userId)
     await this.ensureFilesNetworkPolicy(n.filesNetworkPolicy, userId)
+    // The Headless Service only publishes an A record once the Pod is Ready;
+    // the caller resolves it immediately, so block until it comes up.
+    await this.waitForPodReady(n.filesPod)
   }
 
   // --- reconcile / watch support (leader-only callers) ---
@@ -596,6 +599,18 @@ export class K8sSpawner implements Spawner {
       } }),
       del: () => this.networking.deleteNamespacedNetworkPolicy({ name, namespace: this.namespace }),
     })
+  }
+
+  /** Poll until a Pod's Ready condition is true, or fail after `timeoutMs`. */
+  private async waitForPodReady(name: string, timeoutMs = 60_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      const pod = await this.core.readNamespacedPod({ name, namespace: this.namespace })
+      const ready = pod.status?.conditions?.some((c) => c.type === 'Ready' && c.status === 'True')
+      if (ready) return
+      if (Date.now() >= deadline) throw new Error(`Pod ${name} not ready within ${timeoutMs}ms`)
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
   }
 
   private isNotFound(err: unknown): boolean {

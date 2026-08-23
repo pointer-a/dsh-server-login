@@ -34,7 +34,12 @@ function makeClients() {
     pods, services, secrets, configMaps, policies, jobs, deletes,
     core: {
       async readNamespacedPod({ name }) { return pods.get(name) ?? (() => { throw notFound() })() },
-      async createNamespacedPod({ body }) { pods.set(body.metadata.name, body); return body },
+      async createNamespacedPod({ body }) {
+        // Stored pods report Ready so `waitForPodReady` returns immediately.
+        const pod = { ...body, status: { phase: 'Running', conditions: [{ type: 'Ready', status: 'True' }] } }
+        pods.set(body.metadata.name, pod)
+        return pod
+      },
       async deleteNamespacedPod({ name }) { deletes.push(`pod:${name}`); pods.delete(name) },
       async readNamespacedSecret({ name }) { return secrets.get(name) ?? (() => { throw notFound() })() },
       async createNamespacedSecret({ body }) { secrets.set(body.metadata.name, body); return body },
