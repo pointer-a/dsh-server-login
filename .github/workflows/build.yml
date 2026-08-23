@@ -84,15 +84,19 @@ jobs:
             '    - id: dsh-server-login-runtime' \
             '      name: dsh-server-login/runtime' \
             > /tmp/patch.yml
-          docker run --rm -d --name dsh-smoke \
+          # Foreground + bounded timeout so an early exit still leaves logs.
+          # DSH_HOME mirrors the production layout (§4.3) so the parent-dir
+          # walk reaches /var/lib/dsh-server-login/node_modules; run as root so
+          # dsh can create that tree (the per-user uid is set by the Pod spec
+          # at deploy time, not exercised here).
+          timeout 25 docker run --rm --user 0 \
             -v /tmp/patch.yml:/tmp/patch.yml:ro \
-            -e DSH_HOME=/tmp/dsh-home \
-            dsh:ci --profile web --host 127.0.0.1 --port 8080 --patch /tmp/patch.yml
-          sleep 20
-          docker logs dsh-smoke | tee /tmp/dsh.log
+            -e DSH_HOME=/var/lib/dsh-server-login/users/smoke/home \
+            dsh:ci --profile web --host 127.0.0.1 --port 8080 --patch /tmp/patch.yml \
+            > /tmp/dsh.log 2>&1 || true
+          cat /tmp/dsh.log
           grep -q 'dsh-server-login-runtime' /tmp/dsh.log
           echo "runtime plugin resolved OK"
-          docker stop dsh-smoke
 
       - name: Trivy — control plane
         uses: aquasecurity/trivy-action@v0.36.0
