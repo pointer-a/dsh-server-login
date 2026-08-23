@@ -23,7 +23,8 @@ export interface Instance {
   pid?: number
   exitCode?: number
   lastError?: string
-  patchPath?: string
+  /** Rendered cordis patch **content**, not a path — see {@link Spawner.launch}. */
+  patch?: string
 }
 
 /** Thrown when a user already has a running main DSH. */
@@ -51,9 +52,14 @@ export interface Endpoint {
  *
  * `endpointFor` is spawner-specific: local → `127.0.0.1:<port>`, k8s → the
  * per-user Headless Service DNS (docs/k8s.md §5.4).
+ *
+ * `launch` takes the rendered cordis patch as **content**, not a path: under
+ * k8s the control plane holds no user volume, so it can neither write the patch
+ * nor read it back. `LocalSpawner` materializes it to a file (it does have the
+ * volume) and `K8sSpawner` puts it straight into a ConfigMap.
  */
 export interface Spawner {
-  launch(userId: string, folder: string, patchPath?: string): Promise<Instance>
+  launch(userId: string, folder: string, patch?: string): Promise<Instance>
   restartMain(userId: string): Promise<Instance | undefined>
   spawnWatchdog(userId: string): Promise<Instance | undefined>
   status(userId: string): Promise<UserStatus>

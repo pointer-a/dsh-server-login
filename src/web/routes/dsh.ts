@@ -62,9 +62,10 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: 'not_found' })
     }
 
-    // Per-folder plugin selection → cordis patch. Only written when the dsh CLI
-    // supports --patch (enablePatch); otherwise the child boots clean without it.
-    let patchPath: string | undefined
+    // Per-folder plugin selection → cordis patch. Rendered here but *not*
+    // written: the spawner decides where it lands (a file under local, a
+    // ConfigMap under k8s, where the control plane has no user volume).
+    let patch: string | undefined
     if (app.config.enablePatch) {
       const workspace = await app.db.findWorkspaceByPath(user.id, folder)
       // Only inject plugins the user still has installed; a stale selection for
@@ -72,14 +73,11 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       const installed = new Set(listInstalledPlugins(app.config, user.id).map((plugin) => plugin.id))
       const enabled = (workspace === undefined ? [] : await app.db.getEnabledPluginIds(workspace.id))
         .filter((id) => installed.has(id))
-      const patchesDir = join(app.config.dataRoot, 'users', user.id, 'patches')
-      mkdirSync(patchesDir, { recursive: true })
-      patchPath = join(patchesDir, `${workspace?.id ?? 'default'}.yml`)
-      writeFileSync(patchPath, renderPatch(enabled))
+      patch = renderPatch(enabled)
     }
 
     try {
-      const instance = await app.supervisor.launch(user.id, folderAbs, patchPath)
+      const instance = await app.supervisor.launch(user.id, folderAbs, patch)
       return {
         instance: { id: instance.id, port: instance.port, status: instance.status },
         url: dshUrl(app.config.baseDomain, user),

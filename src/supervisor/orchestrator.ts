@@ -12,6 +12,7 @@
 
 import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { createPortGuard, type PortGuard } from './firewall.js'
@@ -56,9 +57,9 @@ export class LocalSpawner implements Spawner {
   }
 
   /** Spawn the resident main DSH for a user (watchdog is pulled up on demand). */
-  async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
+  async launch(userId: string, folder: string, patch?: string): Promise<Instance> {
     if (this.mains.has(userId)) throw new AlreadyRunningError(userId)
-    return await this.spawnInstance(userId, 'main', folder, patchPath)
+    return await this.spawnInstance(userId, 'main', folder, patch)
   }
 
   /** Stop the current main (clean) and respawn it with the same folder/patch. */
@@ -66,7 +67,7 @@ export class LocalSpawner implements Spawner {
     const current = this.mains.get(userId)
     if (current === undefined) return undefined
     this.killInstance(userId, current)
-    return await this.spawnInstance(userId, 'main', current.folder, current.patchPath)
+    return await this.spawnInstance(userId, 'main', current.folder, current.patch)
   }
 
   /** Spawn a one-shot watchdog for the user's current main (repair / execute). */
@@ -75,7 +76,7 @@ export class LocalSpawner implements Spawner {
     if (this.watchdogs.has(userId)) return this.watchdogs.get(userId)
     const main = this.mains.get(userId)
     if (main === undefined) return undefined
-    return await this.spawnInstance(userId, 'watchdog', main.folder, main.patchPath)
+    return await this.spawnInstance(userId, 'watchdog', main.folder, main.patch)
   }
 
   /** Current main + watchdog for a user. */
@@ -113,6 +114,16 @@ export class LocalSpawner implements Spawner {
     return join(this.config.dataRoot, 'users', userId, 'handoff.json')
   }
 
+  /** Materialize the rendered patch so the dsh CLI can `--patch <file>` it.
+   * Per role, so a watchdog spawning alongside its main never races the file. */
+  private writePatch(userId: string, role: InstanceRole, patch: string): string {
+    const dir = join(this.config.dataRoot, 'users', userId, 'patches')
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, `${role}.yml`)
+    writeFileSync(path, patch)
+    return path
+  }
+
   private async baseEnv(userId: string): Promise<Record<string, string>> {
     const home = join(this.config.dataRoot, 'users', userId, 'home')
     const workspace = join(this.config.dataRoot, 'users', userId, 'ws')
@@ -130,7 +141,7 @@ export class LocalSpawner implements Spawner {
     }
   }
 
-  private async spawnInstance(userId: string, role: InstanceRole, folder: string, patchPath?: string): Promise<Instance> {
+  private async spawnInstance(userId: string, role: InstanceRole, folder: string, patch?: string): Promise<Instance> {
     const isMain = role === 'main'
     const port = isMain ? await findFreePort() : undefined
     const instance: Instance = {
@@ -140,7 +151,7 @@ export class LocalSpawner implements Spawner {
       folder,
       port,
       status: 'starting',
-      patchPath,
+      patch,
     }
     const map = role === 'main' ? this.mains : this.watchdogs
     map.set(userId, instance)
@@ -151,7 +162,9 @@ export class LocalSpawner implements Spawner {
     // for web, the task string for headless): dsh forwards the first unrecognized
     // token onward, so a trailing --patch reaches the app as an unknown option.
     // Off by default so the child boots even on older dsh versions.
-    if (this.config.enablePatch && patchPath !== undefined) launchArgs.push('--patch', patchPath)
+    if (this.config.enablePatch && patch !== undefined) {
+      launchArgs.push('--patch', this.writePatch(userId, role, patch))
+    }
     if (role === 'main') {
       launchArgs.push('--host', '127.0.0.1', '--port', String(port))
     } else {
@@ -258,7 +271,7 @@ export class LocalSpawner implements Spawner {
   private scheduleRestart(userId: string, instance: Instance): void {
     const timer = setTimeout(() => {
       this.restartTimers.delete(userId)
-      void this.spawnInstance(userId, instance.role, instance.folder, instance.patchPath)
+      void this.spawnInstance(userId, instance.role, instance.folder, instance.patch)
     }, this.config.restartBackoffMs)
     timer.unref()
     this.restartTimers.set(userId, timer)

@@ -9,7 +9,6 @@
  */
 
 import * as k8s from '@kubernetes/client-node'
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { AlreadyRunningError, type Endpoint, type Instance, type Spawner, type UserStatus } from './spawner.js'
@@ -91,25 +90,25 @@ export class K8sSpawner implements Spawner {
     this.namespace = config.k8sNamespace
   }
 
-  async launch(userId: string, folder: string, patchPath?: string): Promise<Instance> {
+  async launch(userId: string, folder: string, patch?: string): Promise<Instance> {
     const n = names(userId)
     if (await this.podExists(n.pod)) throw new AlreadyRunningError(userId)
     const apiKey = await this.resolveApiKey(userId)
     const uid = await this.resolveUid(userId)
-    const hasPatch = this.config.enablePatch && patchPath !== undefined
-    if (hasPatch) await this.ensurePatchConfigMap(n.patch, patchPath)
+    const hasPatch = this.config.enablePatch && patch !== undefined
+    if (hasPatch) await this.ensurePatchConfigMap(n.patch, patch)
     await this.ensureSecret(n.secret, apiKey)
     await this.ensurePod(n.pod, userId, uid, apiKey, hasPatch ? n.patch : undefined)
     await this.ensureService(n.service, userId)
     await this.ensureNetworkPolicy(n.networkPolicy, userId)
-    return { id: n.pod, userId, role: 'main', folder, status: 'starting', patchPath }
+    return { id: n.pod, userId, role: 'main', folder, status: 'starting', patch }
   }
 
   async restartMain(userId: string): Promise<Instance | undefined> {
     const existing = await this.readInstance(names(userId).pod, userId, 'main')
     if (existing === undefined) return undefined
     await this.stop(userId)
-    return await this.launch(userId, existing.folder, existing.patchPath)
+    return await this.launch(userId, existing.folder, existing.patch)
   }
 
   async spawnWatchdog(userId: string): Promise<Instance | undefined> {
@@ -269,13 +268,12 @@ export class K8sSpawner implements Spawner {
     } })
   }
 
-  private async ensurePatchConfigMap(name: string, patchPath: string): Promise<void> {
-    const content = readFileSync(patchPath, 'utf8')
+  private async ensurePatchConfigMap(name: string, patch: string): Promise<void> {
     await this.core.createNamespacedConfigMap({ namespace: this.namespace, body: {
       apiVersion: 'v1',
       kind: 'ConfigMap',
       metadata: { name, namespace: this.namespace },
-      data: { 'patch.yml': content },
+      data: { 'patch.yml': patch },
     } })
   }
 
