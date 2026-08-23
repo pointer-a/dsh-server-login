@@ -163,9 +163,59 @@
 
 ---
 
-## 5. 完整部署流程（待补）
+## 5. 完整部署流程（ACK 实跑记录，2026-08-23）
 
-> 晚上补全：k3s HA 搭建 → Longhorn → Cilium → CloudNativePG → cert-manager → Helm chart `helm install dsh ./charts/dsh-server-login`。
+> 在阿里云 **ACK 智能托管模式** 上跑通控制面 Phase 2 的完整步骤。k8s 方案里的
+> 「3 server HA / kube-vip / MetalLB / Cilium」在 ACK 上由托管能力替代（§5.5 映射）。
+> 每用户 DSH Pod（Phase 3）、cert-manager、Helm chart 尚未落地，仍待补。
+
+### 5.1 集群与基础组件
+
+1. 建 ACK 集群（智能托管模式）：**网络插件 DataPath V2（eBPF）+ 勾选 NetworkPolicy**；服务转发模式 IPVS。
+2. 装 CNPG operator：manifest 用 ghproxy 下载（§2.2），`kubectl apply --server-side --force-conflicts`（§2.5 annotation 超长坑）。
+3. **ghcr.io 换源**：CNPG operator 与 Postgres 镜像在阿里云拉不动（§2.4），换 `ghcr.m.daocloud.io`。
+
+### 5.2 部署步骤
+
+1. `kubectl apply -f deploy/00-namespace.yaml`
+2. `kubectl apply -f deploy/01-dsh-pg.yaml`（Postgres 集群；storageClass 用拓扑感知 `alicloud-disk-topology-alltype`，size ≥20GiB）
+3. 等 `dsh-pg` 进入 `Cluster in healthy state`；读连接串：
+   `kubectl -n dsh get secret dsh-pg-app -o jsonpath='{.data.uri}' | base64 -d`
+4. 推镜像到 ACR：CI master push 自动推（需 `ACR_USERNAME`/`ACR_PASSWORD` secret），或 workflow_dispatch。
+5. 建三个 secret（不在 deploy/ YAML 里，因含动态值）：
+   - `dsh-acr-pull`（`docker-registry` 类型，ACR 凭证）
+   - `dsh-secret`（共享加密密钥，`key`）
+   - `dsh-pg`（`url` = 上面读到的 URI）
+6. `kubectl apply -f deploy/02-control-plane.yaml`
+7. bootstrap admin：`kubectl -n dsh exec deploy/dsh-orchestrator -- node lib/cli.js bootstrap-admin --username admin --password '<p>'`
+8. 按 §5.3 验收。
+
+### 5.3 验收清单（Phase 2）
+
+- 注册 → 审核 → 登录 → 管理台/域名 API 全通。
+- 访问控制：普通用户访问管理台 403、域名 API 200。
+- kill 一个控制面副本 → Deployment 自动重建（3/3）、Service 不中断。
+- 数据在 Postgres，删副本/重启不丢。
+
+### 5.4 踩坑记录（ACK 实测新增）
+
+| 坑 | 修复 |
+|---|---|
+| ghcr.io 被墙：CNPG operator / Postgres 镜像拉不动 | 换 `ghcr.m.daocloud.io`（§2.4） |
+| ESSD 最小 20GiB：`size: 10Gi` 报 `less than minimum 20GiB` | storage `size: 20Gi` |
+| CNPG 重建集群密码漂移：`dsh-pg-app` 重新生成密码 | 读最新 URI 重建 `dsh-pg` secret；生产用固定密码 |
+| 控制面启动依赖 Postgres 就绪：ECONNREFUSED 崩 | 等 Postgres healthy 再部署，或接受 CrashLoopBackOff 重试 |
+| Auto Mode 节点有 taint，CNPG pod 调度失败 | GOATScaler 自动扩出无 taint 节点 |
+
+### 5.5 ACK 与 k8s 方案的映射
+
+| k8s.md 定案 | ACK 等价 |
+|---|---|
+| 3 server HA + kube-vip | 托管控制面（免费） |
+| MetalLB（L2 ARP 云上不生效） | SLB / ALB |
+| Cilium | Terway DataPath V2（eBPF + NetworkPolicy） |
+| Longhorn RWX / RWO | NAS / ESSD 云盘 |
+| CloudNativePG | CloudNativePG（自建）或 RDS PG 高可用版 |
 
 ---
 
