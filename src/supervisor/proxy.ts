@@ -84,7 +84,7 @@ async function resolveSubdomainAccess(
   if (session.user.username.toLowerCase() !== slug) {
     return { error: 'forbidden', code: 403 }
   }
-  const endpoint = app.supervisor.endpointFor(session.user.id)
+  const endpoint = await app.supervisor.endpointFor(session.user.id)
   if (endpoint === undefined) return { error: 'not_running', code: 404 }
   return { endpoint }
 }
@@ -130,13 +130,13 @@ function proxyHttp(
 
 export async function registerDshProxy(app: FastifyInstance): Promise<void> {
   // Legacy authenticated subpath proxy.
-  app.all('/u/:slug/dsh/*', { preHandler: requireAuth }, (request, reply) => {
+  app.all('/u/:slug/dsh/*', { preHandler: requireAuth }, async (request, reply) => {
     const slug = (request.params as { slug: string }).slug
     if (request.user === null || request.user.id !== slug) {
       reply.code(403).send({ error: 'forbidden' })
       return
     }
-    const endpoint = app.supervisor.endpointFor(slug)
+    const endpoint = await app.supervisor.endpointFor(slug)
     if (endpoint === undefined) {
       reply.code(404).send({ error: 'not_running' })
       return

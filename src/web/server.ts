@@ -13,6 +13,7 @@ import { createDbAdapter, type DbAdapter, type PublicUser } from '../db/index.js
 import { decrypt, deriveKey } from '../crypto.js'
 import { hashUid } from '../isolation.js'
 import { LocalSpawner } from '../supervisor/orchestrator.js'
+import { K8sSpawner } from '../supervisor/k8s-spawner.js'
 import { registerDshProxy } from '../supervisor/proxy.js'
 import type { Spawner } from '../supervisor/spawner.js'
 import { rateLimit } from './middleware/rate-limit.js'
@@ -44,22 +45,23 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../../web')
 export async function buildServer(config: ServerConfig): Promise<FastifyInstance> {
   const db = await createDbAdapter(config)
   const encryptionKey = deriveKey(config.encryptionSecret)
-  const supervisor: Spawner = new LocalSpawner(
-    config,
-    async (userId) => {
-      const ref = await db.getEnabledCredentialKeyRef(userId)
-      if (ref === null) return null
-      try {
-        return decrypt(ref, encryptionKey)
-      } catch {
-        return null // corrupt ref — treat as unset, let the user re-enter it
-      }
-    },
-    async (userId) => {
-      const user = await db.findUserById(userId)
-      return user?.uid ?? hashUid(userId, config.baseUid)
-    },
-  )
+  const resolveApiKey = async (userId: string): Promise<string | null> => {
+    const ref = await db.getEnabledCredentialKeyRef(userId)
+    if (ref === null) return null
+    try {
+      return decrypt(ref, encryptionKey)
+    } catch {
+      return null // corrupt ref — treat as unset, let the user re-enter it
+    }
+  }
+  const resolveUid = async (userId: string): Promise<number> => {
+    const user = await db.findUserById(userId)
+    return user?.uid ?? hashUid(userId, config.baseUid)
+  }
+  const supervisor: Spawner =
+    config.deployMode === 'k8s'
+      ? new K8sSpawner(config, resolveApiKey, resolveUid)
+      : new LocalSpawner(config, resolveApiKey, resolveUid)
 
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -77,7 +79,7 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
   await registerDshProxy(app)
 
   app.addHook('onClose', async () => {
-    supervisor.teardown()
+    await supervisor.teardown()
     await db.close()
   })
 

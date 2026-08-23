@@ -79,18 +79,18 @@ export class LocalSpawner implements Spawner {
   }
 
   /** Current main + watchdog for a user. */
-  status(userId: string): UserStatus {
+  async status(userId: string): Promise<UserStatus> {
     return { main: this.mains.get(userId), watchdog: this.watchdogs.get(userId) }
   }
 
   /** Endpoint the proxy forwards to (local → the running main's loopback port). */
-  endpointFor(userId: string): Endpoint | undefined {
+  async endpointFor(userId: string): Promise<Endpoint | undefined> {
     const port = this.mains.get(userId)?.port
     return port === undefined ? undefined : { host: '127.0.0.1', port }
   }
 
   /** Stop both processes for a user (cancelling any pending restart). */
-  stop(userId: string): void {
+  async stop(userId: string): Promise<void> {
     const timer = this.restartTimers.get(userId)
     if (timer !== undefined) {
       clearTimeout(timer)
@@ -105,8 +105,8 @@ export class LocalSpawner implements Spawner {
   }
 
   /** Stop every tracked process on shutdown. */
-  teardown(): void {
-    for (const userId of [...this.mains.keys(), ...this.watchdogs.keys()]) this.stop(userId)
+  async teardown(): Promise<void> {
+    for (const userId of [...this.mains.keys(), ...this.watchdogs.keys()]) await this.stop(userId)
   }
 
   private handoffPath(userId: string): string {

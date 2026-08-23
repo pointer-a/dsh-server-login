@@ -56,8 +56,8 @@ export interface Spawner {
   launch(userId: string, folder: string, patchPath?: string): Promise<Instance>
   restartMain(userId: string): Promise<Instance | undefined>
   spawnWatchdog(userId: string): Promise<Instance | undefined>
-  status(userId: string): UserStatus
-  endpointFor(userId: string): Endpoint | undefined
-  stop(userId: string): void
-  teardown(): void
+  status(userId: string): Promise<UserStatus>
+  endpointFor(userId: string): Promise<Endpoint | undefined>
+  stop(userId: string): Promise<void>
+  teardown(): Promise<void>
 }
