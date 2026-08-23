@@ -20,7 +20,7 @@ DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 
 
 同一套代码，靠 `DSH_SERVER_LOGIN_DEPLOY_MODE` 切换：
 
-| | 模式 A：直接部署（默认） | 模式 B：K8s + 容器化 |
+| | 模式 A：直接部署（单服务器） | 模式 B：K8s + 容器化 |
 |---|---|---|
 | 形态 | 单机裸机，`child_process` + setuid/iptables | 多机 ACK，每用户独立 Pod |
 | 数据 | SQLite（本机文件） | PostgreSQL（CloudNativePG） |
@@ -28,9 +28,9 @@ DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 
 | 弹性/HA | 无（单点） | 控制面 3 副本 + leader election，DSH Pod 自动重建 |
 | 交付 | `git clone` + 脚本 | `kubectl apply -f deploy/` |
 
-模式 B 已完整落地（Phase 0–4）：每用户 DSH Pod（dsh + tcp-bridge sidecar）+ file sidecar（8082）+ Headless Service + NetworkPolicy；控制面 3 副本 + Lease 选主 + reconcile + 崩溃接管；NAS(CNFS) 共享卷 + PSA restricted + ResourceQuota。详见 [docs/k8s.md](docs/k8s.md)（定案）与 [docs/k8s-deploy.md](docs/k8s-deploy.md)（踩坑/部署流程）。
+模式 B 已完整落地（Phase 0–4）：每用户 DSH Pod（dsh + tcp-bridge sidecar）+ file sidecar（8082）+ Headless Service + NetworkPolicy；控制面 3 副本 + Lease 选主 + reconcile + 崩溃接管；NAS(CNFS) 共享卷 + PSA restricted + ResourceQuota。详见 [docs/k8s-deployment.md](docs/k8s-deployment.md)（部署教程）与 [docs/k8s-deploy.md](docs/k8s-deploy.md)（踩坑/部署流程）。
 
-## 架构总览（模式 A：单机）
+## 架构总览（模式 A）
 
 ```
 用户浏览器 → nginx(TLS) → 编排服务(Fastify + SQLite，单进程)
@@ -41,7 +41,7 @@ DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 
 
 编排服务以 `child_process` 按用户 spawn DSH 子进程，端口随机分配、崩溃自动重启。完整设计见 [docs/blueprint.md](docs/blueprint.md)。模式 B（k8s）的架构见 [docs/k8s.md](docs/k8s.md)。
 
-## 快速开始
+## 快速开始（模式 A）
 
 ```sh
 npm install
@@ -51,6 +51,7 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 ```
 
 访问 `http://127.0.0.1:3080/`：登录 / 注册 / 管理台 / 桌面（详细部署流程见 [docs/deployment.md](docs/deployment.md)）。
+k8s 模式 B 的部署请参考 [docs/k8s-deployment.md](docs/k8s-deployment.md),本文档介绍皆为模式 A。
 
 ## 配置
 

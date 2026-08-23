@@ -3,8 +3,7 @@
 > 把 `dsh-server-login` 部署成**多机 HA、每用户独立 Pod** 的形态。定案设计见
 > [k8s.md](k8s.md)；本文是**可复制的分步部署教程**（踩坑排查见 [k8s-deploy.md](k8s-deploy.md)）。
 >
-> 实测环境：阿里云 ACK 智能托管（华东2）+ CNFS(NAS) + CloudNativePG + 私有 ACR，
-> 入口走腾讯云 nginx（通配 TLS）。
+> 实测环境：阿里云 ACK 智能托管（华东2）+ CNFS(NAS) + CloudNativePG + 私有 ACR。
 
 ---
 
@@ -13,7 +12,7 @@
 - 一个 **ACK 智能托管集群**（网络插件 DataPath V2 / 勾选 NetworkPolicy；节点 ≥ 3 或启用自动扩容）。
 - 一个 **NAS 文件系统**，并在集群里建 **CNFS**（控制台「容器网络文件系统」，名字记为 `nas`）。
 - 一个 **私有 ACR 仓库**（本文用 `registry.example.com/dsh` 作占位）。
-- 一个域名（本文用 `dsh.example.com` 作占位）+ 通配证书入口机（nginx / SLB）。
+- 一个域名（本文用 `dsh.example.com` 作占位）+ 通配 TLS 证书（cert-manager 或 LB 证书）。
 
 已安装：`kubectl`、`cnpg` operator（`kubectl apply --server-side -f cnpg.yaml`）。
 
@@ -110,35 +109,29 @@ kubectl apply -f deploy/06-quota.yaml
 
 ---
 
-## 6. 入口（域名 + TLS + 反代）
+## 6. 入口（域名 + TLS）
 
-- 集群侧：控制面 Service 用 **SLB LoadBalancer**（`deploy/` 里可加一个 `dsh-orchestrator-lb` Service，
-  `port 80 → targetPort 3080`），拿到公网/内网 IP。
-- 入口机 nginx：`dsh.example.com` + `*.dsh.example.com` 反代到 SLB，通配证书。
-- ⚠️ 若域名走**阿里云公网 SLB**且未在阿里云备案，80/443 会被备案校验拦（`403 Non-compliance ICP Filing`）。
-  解法：入口 nginx 把 `Host` 换成无关值、真实域名走 `X-Forwarded-Host`（控制面已支持），或给域名在阿里云备案。
+- 暴露控制面：给 `dsh-orchestrator` 加一个 **LoadBalancer Service**（`port 80 → targetPort 3080`），
+  或用 **Ingress**（Traefik / nginx-ingress）统一入口。
+- DNS：把 `dsh.example.com` 与 `*.dsh.example.com` 解析到 LB 的 IP（或 Ingress 域名）。
+- TLS：cert-manager 签通配证书（DNS-01），或直接用 LB/ALB 的证书。
+- ⚠️ 域名经阿里云公网 SLB/ALB 暴露时需先做 **ICP 备案**，否则 80/443 会被备案校验拦（403）。
 
-最小 nginx 片段：
+LoadBalancer Service 参考：
 
-```nginx
-server {
-  listen 443 ssl http2;
-  server_name dsh.example.com *.dsh.example.com;
-  ssl_certificate     /etc/letsencrypt/live/dsh.example.com/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/dsh.example.com/privkey.pem;
-  location / {
-    proxy_pass http://<SLB_IP>:80;
-    proxy_set_header Host              8.8.8.8;   # 隐藏真实域名绕备案（可选）
-    proxy_set_header X-Forwarded-Host  $host;     # 真实域名走这里，控制面据此做子域路由
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header Upgrade    $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_read_timeout 3600s;
-  }
-}
+```yaml
+apiVersion: v1
+kind: Service
+metadata: { name: dsh-orchestrator-lb, namespace: dsh }
+spec:
+  type: LoadBalancer
+  selector: { app: dsh-orchestrator }
+  ports: [{ port: 80, targetPort: 3080 }]
 ```
 
 ---
+
+
 
 ## 7. 验收清单
 
