@@ -60,13 +60,15 @@ jobs:
           # bootstrap-admin as the non-root image user (uid 65532), default data root.
           docker run --rm dsh-server-login:ci bootstrap-admin \
             --username admin --password 'ci-test-pass-123'
-          # Boot the server bound to 0.0.0.0 so the host can reach it, then probe.
-          docker run --rm -d --name dsh-cp dsh-server-login:ci --host 0.0.0.0 --port 3080
+          # Boot the server and publish 3080 so the host can reach it, then probe.
+          docker run --rm -d --name dsh-cp -p 3080:3080 dsh-server-login:ci \
+            --host 0.0.0.0 --port 3080
           for i in $(seq 1 30); do
             curl -fsS http://127.0.0.1:3080/ >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:3080/ >/dev/null
+          # On failure, surface the server logs before the step aborts.
+          curl -fsS http://127.0.0.1:3080/ >/dev/null || { docker logs dsh-cp; exit 1; }
           echo "control plane serving OK"
           docker logs dsh-cp
           docker stop dsh-cp
