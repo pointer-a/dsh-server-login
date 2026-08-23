@@ -336,19 +336,27 @@
       }
 
       // ---------- upload / new file ----------
+      const fsErrorText = { exists: '名称已存在', bad_path: '路径无效', bad_name: '名称无效', parent_missing: '上级目录不存在', not_found: '目录不存在' }
       async function fsApi(path, options) {
         const res = await fetch(path, { ...options, headers: { 'content-type': 'application/json' } })
-        if (!res.ok) { alert('操作失败：' + ((await res.json().catch(() => ({}))).error || res.status)); return null }
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))).error
+          alert('操作失败：' + (fsErrorText[err] || err || res.status))
+          return null
+        }
         return res.json()
+      }
+      function openNewFileDialog(type) {
+        document.getElementById('nfType').value = type
+        document.getElementById('nfName').value = ''
+        document.getElementById('newFileDialog').classList.remove('hidden')
+        document.getElementById('nfName').focus()
       }
       function appAction(app) {
         if (app === 'upload') document.getElementById('fileInput').click()
-        if (app === 'newfile') {
-          document.getElementById('newFileDialog').classList.remove('hidden')
-          document.getElementById('nfName').value = ''
-          document.getElementById('nfName').focus()
-        }
+        if (app === 'newfile') openNewFileDialog('file')
       }
+      document.getElementById('newFolderBtn').addEventListener('click', () => openNewFileDialog('dir'))
       document.getElementById('fileInput').addEventListener('change', async (event) => {
         const file = event.target.files[0]
         if (!file) return
@@ -362,12 +370,19 @@
         event.target.value = ''
         syncAll()
       })
+      let creating = false
       document.getElementById('nfOk').addEventListener('click', async () => {
+        if (creating) return
         const name = document.getElementById('nfName').value.trim()
         const type = document.getElementById('nfType').value
         if (!name) { alert('请输入名称'); return }
-        await fsApi('/api/fs/create', { method: 'POST', body: JSON.stringify({ path: pathString(), name, type }) })
-        document.getElementById('newFileDialog').classList.add('hidden')
+        creating = true
+        try {
+          const r = await fsApi('/api/fs/create', { method: 'POST', body: JSON.stringify({ path: pathString(), name, type }) })
+          if (r) document.getElementById('newFileDialog').classList.add('hidden')
+        } finally {
+          creating = false
+        }
         syncAll()
       })
       document.getElementById('nfCancel').addEventListener('click', () => document.getElementById('newFileDialog').classList.add('hidden'))
