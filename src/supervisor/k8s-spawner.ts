@@ -512,7 +512,9 @@ export class K8sSpawner implements Spawner {
           ingress: [{ _from: [{ podSelector: { matchLabels: { app: 'dsh-orchestrator' } } }] }],
           egress: [
             {
-              to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+              // DNS to anywhere: the DNS backend varies by distribution (kube-dns /
+              // coredns / node-local-dns on ACK), so don't pin a pod label.
+              to: [{ ipBlock: { cidr: '0.0.0.0/0' } }],
               ports: [
                 { port: 53, protocol: 'UDP' },
                 { port: 53, protocol: 'TCP' },
@@ -614,7 +616,7 @@ export class K8sSpawner implements Spawner {
           // Files only; the sidecar never talks to the LLM API.
           egress: [
             {
-              to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+              to: [{ ipBlock: { cidr: '0.0.0.0/0' } }],
               ports: [
                 { port: 53, protocol: 'UDP' },
                 { port: 53, protocol: 'TCP' },
