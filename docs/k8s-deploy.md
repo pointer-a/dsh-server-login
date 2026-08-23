@@ -283,6 +283,15 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
   `mkdir /.dsh-server-login` → EACCES 崩。`runFileService` 已钉 `dataRoot=/tmp` + 占位
   `encryptionSecret` 跳过写文件。
 
+### 7.5 docker.io 被墙 → socat sidecar 换成 Node tcp-bridge
+
+- ACK 节点拉不动 docker.io（busybox/alpine/socat 都超时），而 `alpine/socat` 正是
+  每用户 DSH Pod 的 sidecar 镜像。改为控制面镜像里的 `tcp-bridge` 子命令（`net`
+  纯转发 8081→8080），DSH Pod 只依赖 ACR 里已有的 `dsh` + `dsh-server-login`
+  两个镜像 + `imagePullSecret`，彻底去掉 docker.io 依赖。
+- 测鉴权/带 cookie 的接口用 `--resolve` 走域名，别用 `kubectl port-forward`：设了
+  `cookieDomain=.dsh.xulei1112.cloud` 后 cookie 不会发到 `127.0.0.1`。
+
 ### 7.4 域名入口被阿里云备案拦截
 
 - 腾讯云入口机 nginx 反代到 ACK 公网 SLB（`8.153.12.52`）时，`Host: dsh.xulei1112.cloud`
