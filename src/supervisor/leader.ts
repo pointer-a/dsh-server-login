@@ -34,6 +34,18 @@ export interface LeaderOptions {
   coordination?: k8s.CoordinationV1Api
 }
 
+/** `@kubernetes/client-node` deserializes `V1MicroTime` back to an ISO string,
+ * not a Date — `renewTime.getTime()` would throw. Normalize either shape. */
+function toMillis(time: unknown): number {
+  if (time === undefined || time === null) return 0
+  if (typeof time === 'string') {
+    const ms = Date.parse(time)
+    return Number.isNaN(ms) ? 0 : ms
+  }
+  if (time instanceof Date) return time.getTime()
+  return 0
+}
+
 /** Acquire/keep a Lease, notifying callers across leadership changes. */
 export class LeaderElector {
   private readonly coordination: k8s.CoordinationV1Api
@@ -166,7 +178,7 @@ export class LeaderElector {
         namespace: this.namespace,
       })
       const holder = current.spec?.holderIdentity
-      const renew = current.spec?.renewTime?.getTime() ?? 0
+      const renew = toMillis(current.spec?.renewTime)
       if (holder === this.identity) {
         // We already hold it (e.g. after a restart) — re-read for a fresh RV then renew.
         const fresh = await this.coordination.readNamespacedLease({

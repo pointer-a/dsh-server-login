@@ -6,11 +6,13 @@ import assert from 'node:assert/strict'
 import { LeaderElector } from '../lib/supervisor/leader.js'
 import { planReconcile } from '../lib/supervisor/reconcile.js'
 
+// The real client deserializes V1MicroTime back to an ISO *string*, so fake the
+// same shape here to exercise the normalize-on-read path.
 const lease = (holder, renewMs, transitions = 0, rv = '1') => ({
   metadata: { resourceVersion: rv },
   spec: {
     holderIdentity: holder,
-    renewTime: { getTime: () => renewMs },
+    renewTime: new Date(renewMs).toISOString(),
     leaseTransitions: transitions,
   },
 })
