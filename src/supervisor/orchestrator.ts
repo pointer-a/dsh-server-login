@@ -165,10 +165,12 @@ export class Supervisor {
     const [command = 'dsh', ...args] = this.config.dshCommand
     const launchArgs = ['--profile', role === 'main' ? 'web' : 'headless']
     if (role === 'main') {
-      launchArgs.push('--host', '127.0.0.1', '--port', String(port))
-      // --patch needs a dsh CLI that supports it; off by default so the child
+      // --patch is a launcher flag and must precede the app flags (--host/--port):
+      // dsh forwards the first unrecognized token onward, so a trailing --patch
+      // reaches the web app as an unknown option. Off by default so the child
       // boots even on older dsh versions.
       if (this.config.enablePatch && patchPath !== undefined) launchArgs.push('--patch', patchPath)
+      launchArgs.push('--host', '127.0.0.1', '--port', String(port))
     } else {
       launchArgs.push(WATCHDOG_TASK)
     }
