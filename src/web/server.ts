@@ -12,8 +12,9 @@ import type { ServerConfig } from '../config.js'
 import { createDbAdapter, type DbAdapter, type PublicUser } from '../db/index.js'
 import { decrypt, deriveKey } from '../crypto.js'
 import { hashUid } from '../isolation.js'
-import { Supervisor } from '../supervisor/orchestrator.js'
+import { LocalSpawner } from '../supervisor/orchestrator.js'
 import { registerDshProxy } from '../supervisor/proxy.js'
+import type { Spawner } from '../supervisor/spawner.js'
 import { rateLimit } from './middleware/rate-limit.js'
 import { authRoutes } from './routes/auth.js'
 import { adminRoutes } from './routes/admin.js'
@@ -26,7 +27,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     db: DbAdapter
     config: ServerConfig
-    supervisor: Supervisor
+    supervisor: Spawner
   }
   interface FastifyRequest {
     user: PublicUser | null
@@ -43,7 +44,7 @@ const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../../web')
 export async function buildServer(config: ServerConfig): Promise<FastifyInstance> {
   const db = await createDbAdapter(config)
   const encryptionKey = deriveKey(config.encryptionSecret)
-  const supervisor = new Supervisor(
+  const supervisor: Spawner = new LocalSpawner(
     config,
     async (userId) => {
       const ref = await db.getEnabledCredentialKeyRef(userId)

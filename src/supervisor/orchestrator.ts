@@ -16,46 +16,28 @@ import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { createPortGuard, type PortGuard } from './firewall.js'
 import { findFreePort, scrubEnv } from './spawn.js'
+import {
+  AlreadyRunningError,
+  type Endpoint,
+  type Instance,
+  type InstanceRole,
+  type InstanceStatus,
+  type Spawner,
+  type UserStatus,
+} from './spawner.js'
 
-export type InstanceStatus = 'starting' | 'running' | 'crashed' | 'stopped'
-export type InstanceRole = 'main' | 'watchdog'
+// Re-exported so existing importers (routes) keep resolving from this module.
+export { AlreadyRunningError, type Instance, type InstanceRole, type InstanceStatus, type UserStatus }
 
 /** Task given to the one-shot headless watchdog so it doesn't error on a
  * missing task; executes any post-restart command from the handoff path. */
 const WATCHDOG_TASK = 'Read DSH_SERVER_LOGIN_HANDOFF_PATH. If it contains a JSON {"command": ...}, run that command. Then exit.'
 
-/** A tracked child DSH (main or watchdog). */
-export interface Instance {
-  id: string
-  userId: string
-  role: InstanceRole
-  folder: string
-  port?: number
-  status: InstanceStatus
-  pid?: number
-  exitCode?: number
-  lastError?: string
-  patchPath?: string
-}
-
-/** Thrown when a user already has a running main DSH. */
-export class AlreadyRunningError extends Error {
-  constructor(userId: string) {
-    super(`user ${userId} already has a running DSH`)
-    this.name = 'AlreadyRunningError'
-  }
-}
-
-/** A user's main + watchdog pair. */
-export interface UserStatus {
-  main?: Instance
-  watchdog?: Instance
-}
-
 /**
- * Owns the lifecycle of per-user DSH process pairs. State is in-memory.
+ * Local backend: owns the lifecycle of per-user DSH process pairs via
+ * child_process. State is in-memory. Implements {@link Spawner}.
  */
-export class Supervisor {
+export class LocalSpawner implements Spawner {
   private readonly mains = new Map<string, Instance>()
   private readonly watchdogs = new Map<string, Instance>()
   private readonly children = new Map<string, ChildProcess>()
@@ -101,9 +83,10 @@ export class Supervisor {
     return { main: this.mains.get(userId), watchdog: this.watchdogs.get(userId) }
   }
 
-  /** Loopback port of the user's running main, if any. */
-  portFor(userId: string): number | undefined {
-    return this.mains.get(userId)?.port
+  /** Endpoint the proxy forwards to (local → the running main's loopback port). */
+  endpointFor(userId: string): Endpoint | undefined {
+    const port = this.mains.get(userId)?.port
+    return port === undefined ? undefined : { host: '127.0.0.1', port }
   }
 
   /** Stop both processes for a user (cancelling any pending restart). */

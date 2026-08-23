@@ -14,6 +14,7 @@ import { Agent, request as httpRequest, type IncomingHttpHeaders, type IncomingM
 import { connect } from 'node:net'
 import { hashSessionToken, parseCookie } from '../web/auth.js'
 import { requireAuth } from '../web/middleware/authn.js'
+import type { Endpoint } from './spawner.js'
 
 const upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
 
@@ -59,8 +60,8 @@ export function subdomainForUser(baseDomain: string, username: string): string |
   return baseDomain === '' ? null : `${username.toLowerCase()}.${baseDomain}`
 }
 
-/** A subdomain resolution: a tunnelable port, an error to return, or null (not a subdomain). */
-type SubdomainAccess = { port: number } | { error: string; code: number } | null
+/** A subdomain resolution: a tunnelable endpoint, an error to return, or null (not a subdomain). */
+type SubdomainAccess = { endpoint: Endpoint } | { error: string; code: number } | null
 
 /**
  * Resolve a subdomain Host to a DSH port, authenticating the caller: the session
@@ -83,27 +84,29 @@ async function resolveSubdomainAccess(
   if (session.user.username.toLowerCase() !== slug) {
     return { error: 'forbidden', code: 403 }
   }
-  const port = app.supervisor.portFor(session.user.id)
-  if (port === undefined) return { error: 'not_running', code: 404 }
-  return { port }
+  const endpoint = app.supervisor.endpointFor(session.user.id)
+  if (endpoint === undefined) return { error: 'not_running', code: 404 }
+  return { endpoint }
 }
 
 function proxyHttp(
   request: FastifyRequest,
   reply: FastifyReply,
-  port: number,
+  endpoint: Endpoint,
   targetPath: string,
   rewritePrefix?: string,
 ): void {
   reply.hijack()
   const upstream = httpRequest(
     {
-      host: '127.0.0.1',
-      port,
+      host: endpoint.host,
+      port: endpoint.port,
       path: targetPath,
       method: request.method,
       agent: upstreamAgent,
-      headers: buildUpstreamHeaders(request.headers, port),
+      // Host header stays loopback for the DSH trust fence; the TCP target host
+      // is endpoint.host above. k8s mode overrides the header port separately.
+      headers: buildUpstreamHeaders(request.headers, endpoint.port),
     },
     (upRes: IncomingMessage) => {
       const headers = { ...upRes.headers }
@@ -133,15 +136,15 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
       reply.code(403).send({ error: 'forbidden' })
       return
     }
-    const port = app.supervisor.portFor(slug)
-    if (port === undefined) {
+    const endpoint = app.supervisor.endpointFor(slug)
+    if (endpoint === undefined) {
       reply.code(404).send({ error: 'not_running' })
       return
     }
     const prefix = `/u/${slug}/dsh`
     const rawUrl = request.raw.url ?? '/'
     const targetPath = rawUrl.startsWith(prefix) ? rawUrl.slice(prefix.length) || '/' : rawUrl
-    proxyHttp(request, reply, port, targetPath, prefix)
+    proxyHttp(request, reply, endpoint, targetPath, prefix)
   })
 
   // Per-user subdomain: HTTP (intercept before normal routing).
@@ -152,7 +155,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
       reply.code(access.code).send({ error: access.error })
       return
     }
-    proxyHttp(request, reply, access.port, request.raw.url ?? '/')
+    proxyHttp(request, reply, access.endpoint, request.raw.url ?? '/')
   })
 
   // Per-user subdomain: WebSocket upgrade tunnel. Auth is async (DB lookup), so
@@ -164,7 +167,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
         socket.destroy()
         return
       }
-      const upstream = connect({ host: '127.0.0.1', port: access.port })
+      const upstream = connect({ host: access.endpoint.host, port: access.endpoint.port })
       upstream.on('connect', () => {
         const lines = [`${req.method} ${req.url} HTTP/${req.httpVersion}`]
         for (let i = 0; i < req.rawHeaders.length; i += 2) {
@@ -172,7 +175,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
           if (name === 'host' || STRIP_HEADERS.has(name)) continue
           lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`)
         }
-        lines.push(`Host: 127.0.0.1:${access.port}`)
+        lines.push(`Host: 127.0.0.1:${access.endpoint.port}`)
         upstream.write(lines.join('\r\n') + '\r\n\r\n')
         if (head !== undefined && head.length > 0) upstream.write(head)
         socket.pipe(upstream)
