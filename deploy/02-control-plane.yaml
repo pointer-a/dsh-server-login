@@ -1,0 +1,67 @@
+# 控制面 Deployment + Service（Phase 2，不启动 DSH）。
+# 依赖：secret `dsh-pg`（key: url = Postgres DSN）、`dsh-secret`（key: key =
+# 共享加密密钥）、imagePullSecret `dsh-acr-pull`。镜像由 CI push 到 ACR。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dsh-orchestrator
+  namespace: dsh
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dsh-orchestrator
+  template:
+    metadata:
+      labels:
+        app: dsh-orchestrator
+    spec:
+      imagePullSecrets:
+        - name: dsh-acr-pull
+      containers:
+        - name: orchestrator
+          image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          args: ["--host", "0.0.0.0"]
+          env:
+            - name: DSH_SERVER_LOGIN_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dsh-pg
+                  key: url
+            - name: DSH_SERVER_LOGIN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dsh-secret
+                  key: key
+            - name: DSH_SERVER_LOGIN_SECURE_COOKIES
+              value: "false"
+          ports:
+            - containerPort: 3080
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dsh-orchestrator
+  namespace: dsh
+spec:
+  selector:
+    app: dsh-orchestrator
+  ports:
+    - port: 3080
+      targetPort: 3080
+  type: ClusterIP

@@ -1,0 +1,19 @@
+# CloudNativePG Cluster — 控制面数据层（Phase 2 测试：1 实例）。
+# 生产 HA 用 instances: 3（见 docs/k8s.md §4.5）。storageClass 用拓扑感知
+# WaitForFirstConsumer，避免 ESSD 云盘与 Pod 跨可用区挂载失败。
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: dsh-pg
+  namespace: dsh
+spec:
+  instances: 1
+  # ghcr.io 在阿里云被墙/极慢，Postgres 镜像走国内镜像源。
+  imageName: ghcr.m.daocloud.io/cloudnative-pg/postgresql:18.4-system-trixie
+  storage:
+    size: 20Gi
+    storageClass: alicloud-disk-topology-alltype
+  bootstrap:
+    initdb:
+      database: dsh
+      owner: dsh
