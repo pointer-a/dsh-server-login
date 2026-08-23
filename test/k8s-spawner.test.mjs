@@ -98,7 +98,7 @@ test('k8s: endpointFor returns the headless Service only for a Running Pod', asy
   const s = spawner(clients)
   assert.equal(await s.endpointFor('u1'), undefined, 'absent Pod → undefined')
   clients.pods.set('dsh-u1', { status: { phase: 'Running' } })
-  assert.deepEqual(await s.endpointFor('u1'), { host: 'dsh-u1.dsh.svc.cluster.local', port: 80 })
+  assert.deepEqual(await s.endpointFor('u1'), { host: 'dsh-u1.dsh.svc.cluster.local', port: 8081 })
 })
 
 test('k8s: stop deletes every generated object (Pod/Service/NP/Job/ConfigMap)', async () => {

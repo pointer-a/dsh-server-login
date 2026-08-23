@@ -292,6 +292,15 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
 - 测鉴权/带 cookie 的接口用 `--resolve` 走域名，别用 `kubectl port-forward`：设了
   `cookieDomain=.dsh.xulei1112.cloud` 后 cookie 不会发到 `127.0.0.1`。
 
+### 7.6 每用户 Pod 的 uid 与就绪探针
+
+- **uid 错位**：注册/建 admin 若先 `initUserRoot`（建 files Pod）再 `createUser`，此时
+  用户不存在，`resolveUid` 回退 hash uid，而 `createUser` 给的是 `baseUid+row_id`——
+  files Pod 用 hash uid 建 0700 目录，DSH Pod 用 row_id uid 访问 → EACCES。已改成先
+  建用户再 initUserRoot。
+- **就绪探针**：DSH 只监听 loopback，`tcpSocket 8080` 探的是 Pod IP、永远不 Ready →
+  Headless 无 A 记录 → 子域 502。改成容器内 `node -e http.get(127.0.0.1:8080)` exec 探针。
+
 ### 7.4 域名入口被阿里云备案拦截
 
 - 腾讯云入口机 nginx 反代到 ACK 公网 SLB（`8.153.12.52`）时，`Host: dsh.xulei1112.cloud`
