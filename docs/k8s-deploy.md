@@ -303,6 +303,10 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
 - **子域代理端口**：Headless Service（clusterIP: None）没有 kube-proxy 做 DNAT，代理
   必须直连 Pod 的 targetPort（sidecar 8081），不能连 Service port 80——否则 502。
   `endpointFor` 返回 8081。
+- **cookie 跨子域**：`dsh.<domain>` 登录后跳 `<user>.dsh.<domain>`，`SameSite=Lax` 实测
+  不带 cookie → 401；改 `SameSite=None; Secure`（App 已 HTTPS-only）+ `secureCookies=true`。
+- **代理 502**：控制面 keep-alive 池缓存旧 DSH Pod IP，重建 Pod 后命中旧 IP 副本 → 502；
+  连接出错时 `agent.destroy()` + `agent:false` 重试一次重新 DNS。
 
 ### 7.4 域名入口被阿里云备案拦截
 
