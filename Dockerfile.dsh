@@ -1,0 +1,41 @@
+# dsh — per-user DSH pod image (docs/k8s.md §4.3).
+#
+# Contains the DeepSeek Harness CLI (@deepseek-ai/dsh) plus the dsh-server-login
+# runtime plugin (dsh-server-login/runtime), which the orchestrator injects into
+# every child DSH via `--patch`. The runtime plugin is placed at
+# /var/lib/dsh-server-login/node_modules so Node's parent-dir walk from any
+# per-user $DSH_HOME/profiles/<name>/ resolves it. DSH_HOME is
+# /var/lib/dsh-server-login/users/<id>/home (§4.3 / §4.7), so
+# /var/lib/dsh-server-login is a fixed ancestor of every profile — independent
+# of the harness's fallback-symlink closure. Keep this path in sync with
+# DSH_SERVER_LOGIN_DATA_ROOT if the deployment changes it.
+#
+# Pin the base digest via --build-arg (see Dockerfile).
+ARG NODE_IMAGE=node:22-slim
+
+# --- build stage: compile dsh-server-login -> lib/runtime.js ---
+FROM ${NODE_IMAGE} AS build
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY package.json package-lock.json tsconfig.json ./
+COPY src ./src
+RUN npm ci && npm run build
+
+# --- runtime stage ---
+FROM ${NODE_IMAGE}
+# The harness CLI (bin `dsh`); published to npm as a prebuilt release candidate.
+RUN npm i -g @deepseek-ai/dsh@0.1.1-rc.2
+# Runtime plugin: only lib/ (runtime.js is zero-dependency) + its manifest
+# (exports["./runtime"]). The control-plane stack (fastify/pg/better-sqlite3)
+# is not needed in the pod.
+RUN mkdir -p /var/lib/dsh-server-login/node_modules/dsh-server-login
+COPY --from=build /build/lib /var/lib/dsh-server-login/node_modules/dsh-server-login/lib
+COPY --from=build /build/package.json /var/lib/dsh-server-login/node_modules/dsh-server-login/
+# Non-root image default; the Pod overrides runAsUser per user (§4.3).
+RUN groupadd --gid 65532 dsh \
+  && useradd --uid 65532 --gid dsh --home-dir /home/dsh --create-home --shell /usr/sbin/nologin dsh
+USER dsh
+EXPOSE 8080 8081
+ENTRYPOINT ["dsh"]
