@@ -92,7 +92,7 @@ jobs:
           timeout 25 docker run --rm --user 0 \
             -v /tmp/patch.yml:/tmp/patch.yml:ro \
             -e DSH_HOME=/var/lib/dsh-server-login/users/smoke/home \
-            dsh:ci --profile web --host 127.0.0.1 --port 8080 --patch /tmp/patch.yml \
+            dsh:ci --profile web --patch /tmp/patch.yml --host 127.0.0.1 --port 8080 \
             > /tmp/dsh.log 2>&1 || true
           cat /tmp/dsh.log
           grep -q 'dsh-server-login-runtime' /tmp/dsh.log
