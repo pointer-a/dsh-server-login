@@ -63,6 +63,8 @@ export interface ServerConfig {
   k8sNamespace: string
   /** Image for per-user DSH Pods (k8s mode only). */
   dshImage: string
+  /** Image for the per-user file sidecar (k8s mode only; shares the control-plane image). */
+  controlPlaneImage: string
   /** ServiceAccount the orchestrator runs as (k8s mode only). */
   k8sServiceAccount: string
 }
@@ -91,6 +93,7 @@ export interface ConfigOverrides {
   deployMode?: DeployMode | string
   k8sNamespace?: string
   dshImage?: string
+  controlPlaneImage?: string
   k8sServiceAccount?: string
 }
 
@@ -210,6 +213,8 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     deployMode,
     k8sNamespace: overrides.k8sNamespace ?? process.env.DSH_SERVER_LOGIN_NAMESPACE ?? DEFAULT_K8S_NAMESPACE,
     dshImage: overrides.dshImage ?? process.env.DSH_SERVER_LOGIN_DSH_IMAGE ?? '',
+    controlPlaneImage:
+      overrides.controlPlaneImage ?? process.env.DSH_SERVER_LOGIN_CONTROL_PLANE_IMAGE ?? '',
     k8sServiceAccount:
       overrides.k8sServiceAccount ?? process.env.DSH_SERVER_LOGIN_K8S_SERVICE_ACCOUNT ?? DEFAULT_K8S_SERVICE_ACCOUNT,
   }

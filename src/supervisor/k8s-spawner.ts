@@ -10,7 +10,9 @@
 
 import * as k8s from '@kubernetes/client-node'
 import type { ServerConfig } from '../config.js'
+import type { DbAdapter } from '../db/adapter.js'
 import { HANDOFF_FILE, HOME_DIR, USERS_DIR, WORKSPACE_DIR } from '../fs/workspace.js'
+import { FILE_SERVICE_PORT, USER_ROOT_ENV } from '../web/file-service.js'
 import { AlreadyRunningError, type Endpoint, type Instance, type Spawner, type UserStatus } from './spawner.js'
 
 /** Loopback port the dsh container binds; the socat sidecar bridges 8081 → 8080. */
@@ -23,7 +25,7 @@ const WATCHDOG_TASK = 'Read DSH_SERVER_LOGIN_HANDOFF_PATH. If it contains a JSON
 const USERS_PVC = 'dsh-users'
 
 /** Per-user resource names (deterministic — idempotent create). */
-function names(userId: string): { pod: string; service: string; networkPolicy: string; secret: string; job: string; patch: string } {
+function names(userId: string) {
   return {
     pod: `dsh-${userId}`,
     service: `dsh-${userId}`,
@@ -31,6 +33,9 @@ function names(userId: string): { pod: string; service: string; networkPolicy: s
     secret: `dsh-key-${userId}`,
     job: `dsh-${userId}-watchdog`,
     patch: `dsh-${userId}-patch`,
+    filesPod: `dsh-files-${userId}`,
+    filesService: `dsh-files-${userId}`,
+    filesNetworkPolicy: `dsh-files-${userId}`,
   }
 }
 
@@ -45,13 +50,19 @@ function userPaths(userId: string): { home: string; ws: string; mount: string } 
   return { home: `${mount}/${HOME_DIR}`, ws: `${mount}/${WORKSPACE_DIR}`, mount }
 }
 
-/** Pod-safe labels shared by Pod/Service/NetworkPolicy/Job. */
+/** Pod-safe labels shared by the DSH Pod/Service/NetworkPolicy/Job. */
 function podLabels(userId: string): { app: string; user: string } {
   return { app: 'dsh', user: userId }
 }
 
+/** Labels for the per-user file sidecar (a distinct `app`, so its own
+ * Service/NetworkPolicy select it without touching the DSH Pod). */
+function filesLabels(userId: string): { app: string; user: string } {
+  return { app: 'dsh-files', user: userId }
+}
+
 /** API-key env entry, omitted when the user has no key. */
-function apiKeyEnv(namespace: string, userId: string, apiKey: string | null): k8s.V1EnvVar[] {
+function apiKeyEnv(userId: string, apiKey: string | null): k8s.V1EnvVar[] {
   if (apiKey === null) return []
   return [{ name: 'DEEPSEEK_API_KEY', valueFrom: { secretKeyRef: { name: names(userId).secret, key: 'key' } } }]
 }
@@ -72,6 +83,12 @@ function dataVolume(): k8s.V1Volume[] {
   return [{ name: 'data', persistentVolumeClaim: { claimName: USERS_PVC } }]
 }
 
+/** The shared RWX volume mounted at its **root** (no subPath) so an init
+ * container can create/chown `<pvc>/<userId>` as the user's own uid. */
+function dataRootVolume(): k8s.V1Volume[] {
+  return [{ name: 'data-root', persistentVolumeClaim: { claimName: USERS_PVC } }]
+}
+
 /**
  * K8s backend implementing {@link Spawner}. State lives in the cluster; every
  * method is a K8s API call (or a read).
@@ -84,20 +101,32 @@ export class K8sSpawner implements Spawner {
 
   constructor(
     private readonly config: ServerConfig,
+    private readonly db: DbAdapter,
     private readonly resolveApiKey: (userId: string) => Promise<string | null>,
     private readonly resolveUid: (userId: string) => Promise<number>,
+    clients?: { core: k8s.CoreV1Api; networking: k8s.NetworkingV1Api; batch: k8s.BatchV1Api },
   ) {
-    const kc = new k8s.KubeConfig()
-    kc.loadFromCluster()
-    this.core = kc.makeApiClient(k8s.CoreV1Api)
-    this.networking = kc.makeApiClient(k8s.NetworkingV1Api)
-    this.batch = kc.makeApiClient(k8s.BatchV1Api)
+    // Injecting clients short-circuits cluster auth (used by tests). Otherwise
+    // build them from the in-cluster config, which needs a mounted SA token.
+    if (clients === undefined) {
+      const kc = new k8s.KubeConfig()
+      kc.loadFromCluster()
+      clients = {
+        core: kc.makeApiClient(k8s.CoreV1Api),
+        networking: kc.makeApiClient(k8s.NetworkingV1Api),
+        batch: kc.makeApiClient(k8s.BatchV1Api),
+      }
+    }
+    this.core = clients.core
+    this.networking = clients.networking
+    this.batch = clients.batch
     this.namespace = config.k8sNamespace
   }
 
   async launch(userId: string, folder: string, patch?: string): Promise<Instance> {
     const n = names(userId)
     if (await this.podExists(n.pod)) throw new AlreadyRunningError(userId)
+    await this.ensureFileService(userId) // the DSH Pod's subPath must already exist
     const apiKey = await this.resolveApiKey(userId)
     const uid = await this.resolveUid(userId)
     const hasPatch = this.config.enablePatch && patch !== undefined
@@ -110,10 +139,10 @@ export class K8sSpawner implements Spawner {
   }
 
   async restartMain(userId: string): Promise<Instance | undefined> {
-    const existing = await this.readInstance(names(userId).pod, userId, 'main')
-    if (existing === undefined) return undefined
+    const desired = await this.db.findUserInstance(userId, 'main')
+    if (desired === undefined) return undefined
     await this.stop(userId)
-    return await this.launch(userId, existing.folder, existing.patch)
+    return await this.launch(userId, desired.folder ?? '', desired.patch ?? undefined)
   }
 
   async spawnWatchdog(userId: string): Promise<Instance | undefined> {
@@ -148,7 +177,7 @@ export class K8sSpawner implements Spawner {
                   { name: 'DSH_HOME', value: home },
                   { name: 'DSH_SERVER_LOGIN_ROLE', value: 'watchdog' },
                   { name: 'DSH_SERVER_LOGIN_HANDOFF_PATH', value: `${mount}/${HANDOFF_FILE}` },
-                  ...apiKeyEnv(this.namespace, userId, apiKey),
+                  ...apiKeyEnv(userId, apiKey),
                 ],
                 volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
                 securityContext: containerSecurity(uid),
@@ -167,13 +196,15 @@ export class K8sSpawner implements Spawner {
   }
 
   async endpointFor(userId: string): Promise<Endpoint | undefined> {
+    let pod: k8s.V1Pod
     try {
-      const pod = await this.core.readNamespacedPod({ name: names(userId).pod, namespace: this.namespace })
-      if (pod.status?.phase !== 'Running') return undefined
-      return { host: `${names(userId).service}.${this.namespace}.svc.cluster.local`, port: 80 }
-    } catch {
-      return undefined // Pod not found → not running
+      pod = await this.core.readNamespacedPod({ name: names(userId).pod, namespace: this.namespace })
+    } catch (err) {
+      if (this.isNotFound(err)) return undefined
+      throw err // 403/500 are real failures, not "not running"
     }
+    if (pod.status?.phase !== 'Running') return undefined
+    return { host: `${names(userId).service}.${this.namespace}.svc.cluster.local`, port: 80 }
   }
 
   async stop(userId: string): Promise<void> {
@@ -181,14 +212,26 @@ export class K8sSpawner implements Spawner {
     await this.ignoreNotFound(() => this.core.deleteNamespacedPod({ name: n.pod, namespace: this.namespace }))
     await this.ignoreNotFound(() => this.core.deleteNamespacedService({ name: n.service, namespace: this.namespace }))
     await this.ignoreNotFound(() => this.networking.deleteNamespacedNetworkPolicy({ name: n.networkPolicy, namespace: this.namespace }))
+    await this.ignoreNotFound(() => this.batch.deleteNamespacedJob({ name: n.job, namespace: this.namespace }))
+    await this.ignoreNotFound(() => this.core.deleteNamespacedConfigMap({ name: n.patch, namespace: this.namespace }))
   }
 
   /** No-op: per-user Pods outlive any single control-plane replica (reconcile/leader manages them). */
   async teardown(): Promise<void> {}
 
-  /** Bring up the user's file sidecar (docs/k8s.md §4.10). Implemented in the
-   * next stage; declared here so the {@link Spawner} seam is complete. */
-  async ensureFileService(_userId: string): Promise<void> {}
+  /** Bring up the user's file sidecar (docs/k8s.md §4.10). The sidecar is a
+   * distinct always-on Pod so the desktop is usable *before* the on-demand DSH
+   * launches; its init container creates the user's subPath directory. */
+  async ensureFileService(userId: string): Promise<void> {
+    if (this.config.controlPlaneImage === '') {
+      throw new Error('DSH_SERVER_LOGIN_CONTROL_PLANE_IMAGE is required in k8s mode (file sidecar image)')
+    }
+    const n = names(userId)
+    const uid = await this.resolveUid(userId)
+    await this.ensureFilesPod(n.filesPod, userId, uid)
+    await this.ensureFilesService(n.filesService, userId)
+    await this.ensureFilesNetworkPolicy(n.filesNetworkPolicy, userId)
+  }
 
   // --- helpers ---
 
@@ -196,8 +239,9 @@ export class K8sSpawner implements Spawner {
     try {
       await this.core.readNamespacedPod({ name, namespace: this.namespace })
       return true
-    } catch {
-      return false
+    } catch (err) {
+      if (this.isNotFound(err)) return false
+      throw err // 403/500 are real failures, not "no Pod"
     }
   }
 
@@ -206,20 +250,49 @@ export class K8sSpawner implements Spawner {
       const pod = await this.core.readNamespacedPod({ name, namespace: this.namespace })
       const status = pod.status?.phase === 'Running' ? 'running' : pod.status?.phase === 'Failed' ? 'crashed' : 'starting'
       return { id: name, userId, role, folder: '', status }
-    } catch {
-      return undefined
+    } catch (err) {
+      if (this.isNotFound(err)) return undefined
+      throw err
     }
   }
 
+  /** Create-or-replace, so a relaunch after `stop()` (which deletes these) can
+   * never 409 on a stale Secret/ConfigMap from a prior launch. */
   private async ensureSecret(name: string, apiKey: string | null): Promise<void> {
     if (apiKey === null) return
-    await this.core.createNamespacedSecret({ namespace: this.namespace, body: {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: { name, namespace: this.namespace },
-      type: 'Opaque',
-      stringData: { key: apiKey },
-    } })
+    await this.replace({
+      read: () => this.core.readNamespacedSecret({ name, namespace: this.namespace }),
+      create: () => this.core.createNamespacedSecret({ namespace: this.namespace, body: {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: { name, namespace: this.namespace },
+        type: 'Opaque',
+        stringData: { key: apiKey },
+      } }),
+      del: () => this.core.deleteNamespacedSecret({ name, namespace: this.namespace }),
+    })
+  }
+
+  /** Create-or-replace a generated resource. Reads first for the cheap path,
+   * then treats a 409 race by deleting and recreating (we own every resource
+   * this helper touches, so replacement is safe). */
+  private async replace(ops: {
+    read: () => Promise<unknown>
+    create: () => Promise<unknown>
+    del: () => Promise<unknown>
+  }): Promise<void> {
+    try {
+      await ops.read()
+    } catch (err) {
+      if (!this.isNotFound(err)) throw err
+      try {
+        await ops.create()
+      } catch (createErr) {
+        if (!this.isConflict(createErr)) throw createErr
+        await this.ignoreNotFound(ops.del)
+        await ops.create()
+      }
+    }
   }
 
   private async ensurePod(name: string, userId: string, uid: number, apiKey: string | null, patchConfigMapName?: string): Promise<void> {
@@ -251,7 +324,7 @@ export class K8sSpawner implements Spawner {
             env: [
               { name: 'HOME', value: ws },
               { name: 'DSH_HOME', value: home },
-              ...apiKeyEnv(this.namespace, userId, apiKey),
+              ...apiKeyEnv(userId, apiKey),
             ],
             volumeMounts: [
               { name: 'data', mountPath: mount, subPath: userId },
@@ -278,12 +351,16 @@ export class K8sSpawner implements Spawner {
   }
 
   private async ensurePatchConfigMap(name: string, patch: string): Promise<void> {
-    await this.core.createNamespacedConfigMap({ namespace: this.namespace, body: {
-      apiVersion: 'v1',
-      kind: 'ConfigMap',
-      metadata: { name, namespace: this.namespace },
-      data: { 'patch.yml': patch },
-    } })
+    await this.replace({
+      read: () => this.core.readNamespacedConfigMap({ name, namespace: this.namespace }),
+      create: () => this.core.createNamespacedConfigMap({ namespace: this.namespace, body: {
+        apiVersion: 'v1',
+        kind: 'ConfigMap',
+        metadata: { name, namespace: this.namespace },
+        data: { 'patch.yml': patch },
+      } }),
+      del: () => this.core.deleteNamespacedConfigMap({ name, namespace: this.namespace }),
+    })
   }
 
   private async ensureService(name: string, userId: string): Promise<void> {
@@ -325,14 +402,104 @@ export class K8sSpawner implements Spawner {
     } })
   }
 
+  private async ensureFilesPod(name: string, userId: string, uid: number): Promise<void> {
+    const mount = userPaths(userId).mount
+    await this.core.createNamespacedPod({ namespace: this.namespace, body: {
+      apiVersion: 'v1',
+      kind: 'Pod',
+      metadata: { name, namespace: this.namespace, labels: filesLabels(userId) },
+      spec: {
+        automountServiceAccountToken: false,
+        hostNetwork: false,
+        hostPID: false,
+        securityContext: {
+          runAsNonRoot: true,
+          runAsUser: uid,
+          fsGroup: uid,
+          seccompProfile: { type: 'RuntimeDefault' },
+        },
+        // Creates `<pvc>/<userId>/{ws,home}` as the user's uid (docs/k8s.md
+        // §4.9). Runs on the PVC *root* (no subPath), because the subPath dir
+        // may not exist yet or be root-owned; the user's 0700 dir keeps other
+        // users' files out of reach.
+        initContainers: [
+          {
+            name: 'init-user',
+            image: this.config.controlPlaneImage,
+            command: ['sh', '-ec', `mkdir -p /mnt/${userId}/${WORKSPACE_DIR} /mnt/${userId}/${HOME_DIR} && chmod 0700 /mnt/${userId}`],
+            volumeMounts: [{ name: 'data-root', mountPath: '/mnt' }],
+            securityContext: containerSecurity(uid),
+          },
+        ],
+        containers: [
+          {
+            name: 'files',
+            image: this.config.controlPlaneImage,
+            args: ['file-service'],
+            env: [{ name: USER_ROOT_ENV, value: mount }],
+            ports: [{ containerPort: FILE_SERVICE_PORT }],
+            readinessProbe: { tcpSocket: { port: FILE_SERVICE_PORT }, initialDelaySeconds: 2, periodSeconds: 3 },
+            volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
+            securityContext: containerSecurity(uid),
+            resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { cpu: '100m', memory: '64Mi' } },
+          },
+        ],
+        volumes: [...dataVolume(), ...dataRootVolume()],
+      },
+    } })
+  }
+
+  private async ensureFilesService(name: string, userId: string): Promise<void> {
+    await this.core.createNamespacedService({ namespace: this.namespace, body: {
+      apiVersion: 'v1',
+      kind: 'Service',
+      metadata: { name, namespace: this.namespace },
+      spec: {
+        clusterIP: 'None',
+        selector: filesLabels(userId),
+        ports: [{ port: FILE_SERVICE_PORT, targetPort: FILE_SERVICE_PORT }],
+      },
+    } })
+  }
+
+  private async ensureFilesNetworkPolicy(name: string, userId: string): Promise<void> {
+    await this.networking.createNamespacedNetworkPolicy({ namespace: this.namespace, body: {
+      apiVersion: 'networking.k8s.io/v1',
+      kind: 'NetworkPolicy',
+      metadata: { name, namespace: this.namespace },
+      spec: {
+        podSelector: { matchLabels: filesLabels(userId) },
+        policyTypes: ['Ingress', 'Egress'],
+        ingress: [{ _from: [{ podSelector: { matchLabels: { app: 'dsh-orchestrator' } } }], ports: [{ port: FILE_SERVICE_PORT }] }],
+        // Files only; the sidecar never talks to the LLM API.
+        egress: [
+          {
+            to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+            ports: [
+              { port: 53, protocol: 'UDP' },
+              { port: 53, protocol: 'TCP' },
+            ],
+          },
+        ],
+      },
+    } })
+  }
+
+  private isNotFound(err: unknown): boolean {
+    return (err as { code?: number }).code === 404
+  }
+
+  private isConflict(err: unknown): boolean {
+    return (err as { code?: number }).code === 409
+  }
+
   private async ignoreNotFound(fn: () => Promise<unknown>): Promise<void> {
     try {
       await fn()
-    } catch (e) {
-      // K8s API 404 → already gone; surface anything else.
-      const status = (e as { statusCode?: number }).statusCode
-      if (status === 404) return
-      throw e
+    } catch (err) {
+      // `@kubernetes/client-node` throws `ApiException` with a `code` field.
+      if (this.isNotFound(err)) return
+      throw err
     }
   }
 }
