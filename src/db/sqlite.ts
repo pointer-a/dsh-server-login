@@ -18,39 +18,50 @@ import {
   createSession as createSessionSync,
   createUser as createUserSync,
   deleteCredentialKey as deleteCredentialKeySync,
+  deleteInstance as deleteInstanceSync,
   deleteSession as deleteSessionSync,
+  deleteUserInstances as deleteUserInstancesSync,
   deleteUserSessions as deleteUserSessionsSync,
   findDomainById as findDomainByIdSync,
   findDomainByUser as findDomainByUserSync,
+  findInstance as findInstanceSync,
   findSession as findSessionSync,
   findSessionWithUser as findSessionWithUserSync,
   findUserById as findUserByIdSync,
   findUserBySlug as findUserBySlugSync,
   findUserByUsername as findUserByUsernameSync,
+  findUserInstance as findUserInstanceSync,
   findWorkspaceByPath as findWorkspaceByPathSync,
   getEnabledCredentialKeyRef as getEnabledCredentialKeyRefSync,
   getEnabledPluginIds as getEnabledPluginIdsSync,
   getOrCreateWorkspace as getOrCreateWorkspaceSync,
   listCredentialKeys as listCredentialKeysSync,
   listDomains as listDomainsSync,
+  listInstancesByRole as listInstancesByRoleSync,
   listPublicUsers as listPublicUsersSync,
   listUsersWithoutUid as listUsersWithoutUidSync,
   selectCredentialKey as selectCredentialKeySync,
   setCredentialKey as setCredentialKeySync,
   setDomainVerified as setDomainVerifiedSync,
   setFolderPlugins as setFolderPluginsSync,
+  setInstanceStatus as setInstanceStatusSync,
   setUserRole as setUserRoleSync,
   setUserUid as setUserUidSync,
   upsertDomain as upsertDomainSync,
+  upsertInstance as upsertInstanceSync,
 } from './repo.js'
 import type {
   CredentialKey,
   CreateSessionInput,
   CreateUserInput,
   Domain,
+  DshInstance,
+  DshInstanceRole,
+  DshInstanceStatus,
   PublicUser,
   SessionRow,
   SessionUser,
+  UpsertDshInstanceInput,
   User,
   UserRole,
   Workspace,
@@ -204,6 +215,42 @@ export class SqliteAdapter implements DbAdapter {
 
   async deleteCredentialKey(userId: string, id: string): Promise<boolean> {
     return deleteCredentialKeySync(this.db, userId, id)
+  }
+
+  async upsertInstance(input: UpsertDshInstanceInput): Promise<void> {
+    try {
+      upsertInstanceSync(this.db, input)
+    } catch (e) {
+      mapSqliteError(e)
+    }
+  }
+
+  async findInstance(id: string): Promise<DshInstance | undefined> {
+    return findInstanceSync(this.db, id)
+  }
+
+  async findUserInstance(userId: string, role: DshInstanceRole): Promise<DshInstance | undefined> {
+    return findUserInstanceSync(this.db, userId, role)
+  }
+
+  async listInstancesByRole(role: DshInstanceRole): Promise<DshInstance[]> {
+    return listInstancesByRoleSync(this.db, role)
+  }
+
+  async setInstanceStatus(
+    id: string,
+    status: DshInstanceStatus,
+    outcome?: { exitCode?: number; lastError?: string },
+  ): Promise<boolean> {
+    return setInstanceStatusSync(this.db, id, status, outcome)
+  }
+
+  async deleteInstance(id: string): Promise<boolean> {
+    return deleteInstanceSync(this.db, id)
+  }
+
+  async deleteUserInstances(userId: string): Promise<void> {
+    deleteUserInstancesSync(this.db, userId)
   }
 
   async close(): Promise<void> {

@@ -64,6 +64,34 @@ export interface Domain {
   updatedAt: number
 }
 
+/** Which half of a user's DSH pair a `dsh_instances` row describes. */
+export type DshInstanceRole = 'main' | 'watchdog'
+
+/** Lifecycle state of a `dsh_instances` row (mirrors the column's CHECK). */
+export type DshInstanceStatus = 'starting' | 'running' | 'crashed' | 'repairing' | 'stopped'
+
+/**
+ * A persisted DSH instance — the **desired** state the k8s controller reconciles
+ * the cluster against (docs/k8s.md §5.7). `folder` and `patch` are what a
+ * relaunch needs; `pid`/`port` are local-mode only and stay null under k8s.
+ */
+export interface DshInstance {
+  id: string
+  userId: string
+  workspaceId: string | null
+  role: DshInstanceRole
+  pid: number | null
+  port: number | null
+  status: DshInstanceStatus
+  startedAt: number | null
+  lastExit: number | null
+  exitCode: number | null
+  lastError: string | null
+  folder: string | null
+  /** Rendered Cordis patch content (not a path — the control plane holds no user volume). */
+  patch: string | null
+}
+
 /** A named per-user credential key (secret never exposed). */
 export interface CredentialKey {
   id: string
@@ -86,6 +114,19 @@ export interface CreateSessionInput {
   expiresAt: number
   ip?: string
   userAgent?: string
+}
+
+/** Upsert payload for `dsh_instances`; `id` is the deterministic resource name. */
+export interface UpsertDshInstanceInput {
+  id: string
+  userId: string
+  role: DshInstanceRole
+  status: DshInstanceStatus
+  folder?: string
+  patch?: string
+  workspaceId?: string
+  pid?: number
+  port?: number
 }
 
 export function toPublicUser(user: User): PublicUser {
@@ -128,6 +169,24 @@ export function toWorkspace(row: Record<string, unknown>): Workspace {
     name: row.name as string,
     relPath: row.rel_path as string,
     createdAt: row.created_at as number,
+  }
+}
+
+export function toDshInstance(row: Record<string, unknown>): DshInstance {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    workspaceId: (row.workspace_id as string | null) ?? null,
+    role: row.role as DshInstanceRole,
+    pid: (row.pid as number | null) ?? null,
+    port: (row.port as number | null) ?? null,
+    status: row.status as DshInstanceStatus,
+    startedAt: (row.started_at as number | null) ?? null,
+    lastExit: (row.last_exit as number | null) ?? null,
+    exitCode: (row.exit_code as number | null) ?? null,
+    lastError: (row.last_error as string | null) ?? null,
+    folder: (row.folder as string | null) ?? null,
+    patch: (row.patch as string | null) ?? null,
   }
 }
 

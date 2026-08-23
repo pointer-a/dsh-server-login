@@ -13,6 +13,7 @@ import type { Database } from './connection.js'
 import { prepare } from './prepared.js'
 import {
   toDomain,
+  toDshInstance,
   toPublicUser,
   toSession,
   toUser,
@@ -21,9 +22,13 @@ import {
   type CreateSessionInput,
   type CreateUserInput,
   type Domain,
+  type DshInstance,
+  type DshInstanceRole,
+  type DshInstanceStatus,
   type PublicUser,
   type SessionRow,
   type SessionUser,
+  type UpsertDshInstanceInput,
   type User,
   type UserRole,
   type Workspace,
@@ -31,6 +36,8 @@ import {
 
 const USER_COLS = 'id, username, pass_hash, role, home_dir, api_key_ref, created_at, approved_by, uid'
 const DOMAIN_COLS = 'id, user_id, domain, verified, nginx_config, updated_at'
+const INSTANCE_COLS =
+  'id, user_id, workspace_id, role, pid, port, status, started_at, last_exit, exit_code, last_error, folder, patch'
 
 export function createUser(db: Database, input: CreateUserInput, baseUid: number): User {
   const createdAt = Date.now()
@@ -288,4 +295,72 @@ export function setUserUid(db: Database, userId: string, uid: number): void {
 export function listUsersWithoutUid(db: Database): string[] {
   const rows = prepare(db, 'SELECT id FROM users WHERE uid IS NULL').all() as Array<{ id: string }>
   return rows.map((row) => row.id)
+}
+
+/** Record (or re-record) an instance's desired state. Keyed on the caller's
+ * deterministic id, so a relaunch overwrites rather than duplicating. */
+export function upsertInstance(db: Database, input: UpsertDshInstanceInput): void {
+  prepare(db, `
+    INSERT INTO dsh_instances (id, user_id, workspace_id, role, pid, port, status, started_at, folder, patch)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      workspace_id = excluded.workspace_id,
+      pid = excluded.pid,
+      port = excluded.port,
+      status = excluded.status,
+      started_at = excluded.started_at,
+      folder = excluded.folder,
+      patch = excluded.patch
+  `).run(
+    input.id,
+    input.userId,
+    input.workspaceId ?? null,
+    input.role,
+    input.pid ?? null,
+    input.port ?? null,
+    input.status,
+    Date.now(),
+    input.folder ?? null,
+    input.patch ?? null,
+  )
+}
+
+export function findInstance(db: Database, id: string): DshInstance | undefined {
+  const row = prepare(db, `SELECT ${INSTANCE_COLS} FROM dsh_instances WHERE id = ?`).get(id)
+  return row ? toDshInstance(row as Record<string, unknown>) : undefined
+}
+
+export function findUserInstance(db: Database, userId: string, role: DshInstanceRole): DshInstance | undefined {
+  const row = prepare(db, `SELECT ${INSTANCE_COLS} FROM dsh_instances WHERE user_id = ? AND role = ?`).get(userId, role)
+  return row ? toDshInstance(row as Record<string, unknown>) : undefined
+}
+
+export function listInstancesByRole(db: Database, role: DshInstanceRole): DshInstance[] {
+  const rows = prepare(db, `SELECT ${INSTANCE_COLS} FROM dsh_instances WHERE role = ? ORDER BY started_at ASC`)
+    .all(role) as Array<Record<string, unknown>>
+  return rows.map((row) => toDshInstance(row))
+}
+
+/** Record a state transition; an `outcome` also stamps `last_exit`. */
+export function setInstanceStatus(
+  db: Database,
+  id: string,
+  status: DshInstanceStatus,
+  outcome?: { exitCode?: number; lastError?: string },
+): boolean {
+  const info =
+    outcome === undefined
+      ? prepare(db, 'UPDATE dsh_instances SET status = ? WHERE id = ?').run(status, id)
+      : prepare(db, 'UPDATE dsh_instances SET status = ?, last_exit = ?, exit_code = ?, last_error = ? WHERE id = ?')
+          .run(status, Date.now(), outcome.exitCode ?? null, outcome.lastError ?? null, id)
+  return info.changes > 0
+}
+
+export function deleteInstance(db: Database, id: string): boolean {
+  const info = prepare(db, 'DELETE FROM dsh_instances WHERE id = ?').run(id)
+  return info.changes > 0
+}
+
+export function deleteUserInstances(db: Database, userId: string): void {
+  prepare(db, 'DELETE FROM dsh_instances WHERE user_id = ?').run(userId)
 }

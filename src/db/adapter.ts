@@ -10,9 +10,13 @@ import type {
   CreateSessionInput,
   CreateUserInput,
   Domain,
+  DshInstance,
+  DshInstanceRole,
+  DshInstanceStatus,
   PublicUser,
   SessionRow,
   SessionUser,
+  UpsertDshInstanceInput,
   User,
   UserRole,
   Workspace,
@@ -56,6 +60,19 @@ export interface DbAdapter {
   setCredentialKey(userId: string, name: string, encryptedRef: string): Promise<CredentialKey>
   selectCredentialKey(userId: string, id: string): Promise<boolean>
   deleteCredentialKey(userId: string, id: string): Promise<boolean>
+  // instances (desired state the k8s controller reconciles against — docs/k8s.md §5.7)
+  upsertInstance(input: UpsertDshInstanceInput): Promise<void>
+  findInstance(id: string): Promise<DshInstance | undefined>
+  findUserInstance(userId: string, role: DshInstanceRole): Promise<DshInstance | undefined>
+  listInstancesByRole(role: DshInstanceRole): Promise<DshInstance[]>
+  /** Record a state transition; `exitCode`/`lastError` also stamp `last_exit`. */
+  setInstanceStatus(
+    id: string,
+    status: DshInstanceStatus,
+    outcome?: { exitCode?: number; lastError?: string },
+  ): Promise<boolean>
+  deleteInstance(id: string): Promise<boolean>
+  deleteUserInstances(userId: string): Promise<void>
   // lifecycle
   close(): Promise<void>
 }

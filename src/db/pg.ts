@@ -12,6 +12,7 @@ import { mapPgError } from './errors.js'
 import { runPgMigrations } from './schema.js'
 import {
   toDomain,
+  toDshInstance,
   toPublicUser,
   toSession,
   toUser,
@@ -20,9 +21,13 @@ import {
   type CreateSessionInput,
   type CreateUserInput,
   type Domain,
+  type DshInstance,
+  type DshInstanceRole,
+  type DshInstanceStatus,
   type PublicUser,
   type SessionRow,
   type SessionUser,
+  type UpsertDshInstanceInput,
   type User,
   type UserRole,
   type Workspace,
@@ -36,6 +41,8 @@ types.setTypeParser(20, (value: string) => Number(value))
 
 const USER_COLS = 'id, username, pass_hash, role, home_dir, api_key_ref, created_at, approved_by, uid'
 const DOMAIN_COLS = 'id, user_id, domain, verified, nginx_config, updated_at'
+const INSTANCE_COLS =
+  'id, user_id, workspace_id, role, pid, port, status, started_at, last_exit, exit_code, last_error, folder, patch'
 
 /** Run `fn` on a dedicated client inside a BEGIN/COMMIT/ROLLBACK transaction. */
 export async function withTx<T>(pool: Pool, fn: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -338,6 +345,82 @@ export class PgAdapter implements DbAdapter {
   async deleteCredentialKey(userId: string, id: string): Promise<boolean> {
     const result = await this.pool.query('DELETE FROM credential_vault WHERE id = $1 AND user_id = $2', [id, userId])
     return (result.rowCount ?? 0) > 0
+  }
+
+  async upsertInstance(input: UpsertDshInstanceInput): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO dsh_instances (id, user_id, workspace_id, role, pid, port, status, started_at, folder, patch)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT(id) DO UPDATE SET
+           workspace_id = excluded.workspace_id,
+           pid = excluded.pid,
+           port = excluded.port,
+           status = excluded.status,
+           started_at = excluded.started_at,
+           folder = excluded.folder,
+           patch = excluded.patch`,
+        [
+          input.id,
+          input.userId,
+          input.workspaceId ?? null,
+          input.role,
+          input.pid ?? null,
+          input.port ?? null,
+          input.status,
+          Date.now(),
+          input.folder ?? null,
+          input.patch ?? null,
+        ],
+      )
+    } catch (e) {
+      mapPgError(e)
+    }
+  }
+
+  async findInstance(id: string): Promise<DshInstance | undefined> {
+    const { rows } = await this.pool.query(`SELECT ${INSTANCE_COLS} FROM dsh_instances WHERE id = $1`, [id])
+    return rows.length > 0 ? toDshInstance(rows[0] as Record<string, unknown>) : undefined
+  }
+
+  async findUserInstance(userId: string, role: DshInstanceRole): Promise<DshInstance | undefined> {
+    const { rows } = await this.pool.query(
+      `SELECT ${INSTANCE_COLS} FROM dsh_instances WHERE user_id = $1 AND role = $2`,
+      [userId, role],
+    )
+    return rows.length > 0 ? toDshInstance(rows[0] as Record<string, unknown>) : undefined
+  }
+
+  async listInstancesByRole(role: DshInstanceRole): Promise<DshInstance[]> {
+    const { rows } = await this.pool.query(
+      `SELECT ${INSTANCE_COLS} FROM dsh_instances WHERE role = $1 ORDER BY started_at ASC`,
+      [role],
+    )
+    return rows.map((row) => toDshInstance(row as Record<string, unknown>))
+  }
+
+  async setInstanceStatus(
+    id: string,
+    status: DshInstanceStatus,
+    outcome?: { exitCode?: number; lastError?: string },
+  ): Promise<boolean> {
+    const result =
+      outcome === undefined
+        ? await this.pool.query('UPDATE dsh_instances SET status = $1 WHERE id = $2', [status, id])
+        : await this.pool.query(
+            'UPDATE dsh_instances SET status = $1, last_exit = $2, exit_code = $3, last_error = $4 WHERE id = $5',
+            [status, Date.now(), outcome.exitCode ?? null, outcome.lastError ?? null, id],
+          )
+    return (result.rowCount ?? 0) > 0
+  }
+
+  async deleteInstance(id: string): Promise<boolean> {
+    const result = await this.pool.query('DELETE FROM dsh_instances WHERE id = $1', [id])
+    return (result.rowCount ?? 0) > 0
+  }
+
+  async deleteUserInstances(userId: string): Promise<void> {
+    await this.pool.query('DELETE FROM dsh_instances WHERE user_id = $1', [userId])
   }
 
   async close(): Promise<void> {

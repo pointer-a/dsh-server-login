@@ -113,6 +113,79 @@ function register(backend, makeAdapter) {
       await db.close()
     }
   })
+
+  test(`${backend}: upsertInstance round-trips folder + patch and is idempotent`, async () => {
+    const db = await makeAdapter()
+    try {
+      await db.createUser(user('a', 'alice'))
+      await db.upsertInstance({ id: 'dsh-a', userId: 'a', role: 'main', status: 'starting', folder: '/ws/proj', patch: '- insert:\n' })
+      const first = await db.findInstance('dsh-a')
+      assert.equal(first.folder, '/ws/proj')
+      assert.equal(first.patch, '- insert:\n')
+      assert.equal(first.status, 'starting')
+      assert.ok(first.startedAt > 0, 'started_at stamped')
+
+      // Same deterministic id → overwrite, not a duplicate row.
+      await db.upsertInstance({ id: 'dsh-a', userId: 'a', role: 'main', status: 'running', folder: '/ws/other' })
+      const second = await db.findInstance('dsh-a')
+      assert.equal(second.folder, '/ws/other')
+      assert.equal(second.patch, null, 'omitted patch clears the column')
+      assert.equal((await db.listInstancesByRole('main')).filter((i) => i.userId === 'a').length, 1)
+    } finally {
+      await db.close()
+    }
+  })
+
+  test(`${backend}: setInstanceStatus records the exit outcome`, async () => {
+    const db = await makeAdapter()
+    try {
+      await db.createUser(user('a', 'alice'))
+      await db.upsertInstance({ id: 'dsh-a', userId: 'a', role: 'main', status: 'running', folder: '/ws' })
+      assert.equal(await db.setInstanceStatus('dsh-a', 'crashed', { exitCode: 137, lastError: 'OOMKilled' }), true)
+      const row = await db.findInstance('dsh-a')
+      assert.equal(row.status, 'crashed')
+      assert.equal(row.exitCode, 137)
+      assert.equal(row.lastError, 'OOMKilled')
+      assert.ok(row.lastExit > 0, 'last_exit stamped')
+      assert.equal(await db.setInstanceStatus('dsh-missing', 'stopped'), false, 'unknown id reports no change')
+    } finally {
+      await db.close()
+    }
+  })
+
+  test(`${backend}: instances are scoped by user and role, and cascade on user delete`, async () => {
+    const db = await makeAdapter()
+    try {
+      await db.createUser(user('a', 'alice'))
+      await db.createUser(user('b', 'bob'))
+      await db.upsertInstance({ id: 'dsh-a', userId: 'a', role: 'main', status: 'running', folder: '/ws' })
+      await db.upsertInstance({ id: 'dsh-a-watchdog', userId: 'a', role: 'watchdog', status: 'starting' })
+      await db.upsertInstance({ id: 'dsh-b', userId: 'b', role: 'main', status: 'running', folder: '/ws' })
+
+      assert.equal((await db.findUserInstance('a', 'main')).id, 'dsh-a')
+      assert.equal((await db.findUserInstance('a', 'watchdog')).id, 'dsh-a-watchdog')
+      assert.equal((await db.listInstancesByRole('main')).length, 2)
+      assert.equal((await db.listInstancesByRole('watchdog')).length, 1)
+
+      await db.deleteUserInstances('a')
+      assert.equal(await db.findUserInstance('a', 'main'), undefined)
+      assert.equal((await db.listInstancesByRole('main')).length, 1, "b's instance survives")
+    } finally {
+      await db.close()
+    }
+  })
+
+  test(`${backend}: instance for unknown user → ForeignKeyViolationError`, async () => {
+    const db = await makeAdapter()
+    try {
+      await assert.rejects(
+        () => db.upsertInstance({ id: 'dsh-ghost', userId: 'missing', role: 'main', status: 'starting' }),
+        ForeignKeyViolationError,
+      )
+    } finally {
+      await db.close()
+    }
+  })
 }
 
 register('sqlite', () => new SqliteAdapter(':memory:', 100000))

@@ -200,6 +200,20 @@ ALTER TABLE users ADD COLUMN row_id BIGINT GENERATED ALWAYS AS IDENTITY;
 ALTER TABLE users ADD COLUMN uid BIGINT;
 `
 
+// v4: desired-state columns on `dsh_instances`. The table has existed since v1
+// but was never read or written; the k8s controller uses it as the reconcile
+// target (docs/k8s.md §5.7), which needs the launch folder and the rendered
+// Cordis patch to rebuild a Pod that went missing.
+const SQLITE_V4 = `
+ALTER TABLE dsh_instances ADD COLUMN folder TEXT;
+ALTER TABLE dsh_instances ADD COLUMN patch TEXT;
+`
+
+const PG_V4 = `
+ALTER TABLE dsh_instances ADD COLUMN folder TEXT;
+ALTER TABLE dsh_instances ADD COLUMN patch TEXT;
+`
+
 interface Migration {
   version: number
   name: string
@@ -211,6 +225,7 @@ const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sqlite: SQLITE_V1, pg: PG_V1 },
   { version: 2, name: 'credential vault enabled flag', sqlite: SQLITE_V2, pg: PG_V2 },
   { version: 3, name: 'per-user uid', sqlite: SQLITE_V3, pg: PG_V3 },
+  { version: 4, name: 'instance desired state', sqlite: SQLITE_V4, pg: PG_V4 },
 ]
 
 /** Apply unapplied SQLite migrations inside a single transaction. */
