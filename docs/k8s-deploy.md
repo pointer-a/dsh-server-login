@@ -270,13 +270,18 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
 - bootstrap Job 第一次卡 `ContainerCreating` 无事件 = NFS 挂载挂起（挂载目标错/VPC 不通）；
   目标对了会报 `mount.nfs: Connection reset by peer`（通常是安全组/访问组或目标刚就绪）。
 
-### 7.3 每用户 Pod 镜像拉取
+### 7.3 每用户 Pod 镜像拉取与资源
 
 - 控制面镜像在**私有 ACR**，生成的 files Pod / DSH Pod / watchdog Job **必须带
   `imagePullSecrets: [dsh-acr-pull]`**——控制面 Deployment 有，但生成的 Pod 不继承。
   漏了就是 `Init:ImagePullBackOff insufficient_scope`。代码里 config `imagePullSecret`
   默认 `dsh-acr-pull`，已在 K8sSpawner 生成的三类 Pod/Job 全部带上。
 - bootstrap Job 也需 `imagePullSecrets` + 用控制面镜像（busybox 从 docker.io 拉不动）。
+- files sidecar 内存 64Mi 跑不起 node:22-slim + Fastify（OOMKilled → Pod 不 Ready →
+  Headless DNS 无 A 记录 → 控制面 ENOTFOUND），提到 256Mi。
+- files sidecar 以用户 uid 跑且无 home，`homedir()` 落到 `/`，`resolveConfig` 会尝试
+  `mkdir /.dsh-server-login` → EACCES 崩。`runFileService` 已钉 `dataRoot=/tmp` + 占位
+  `encryptionSecret` 跳过写文件。
 
 ### 7.4 域名入口被阿里云备案拦截
 
