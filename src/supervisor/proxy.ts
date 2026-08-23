@@ -64,6 +64,20 @@ export function subdomainForUser(baseDomain: string, username: string): string |
 type SubdomainAccess = { endpoint: Endpoint } | { error: string; code: number } | null
 
 /**
+ * The client-facing host, preferring `X-Forwarded-Host`. The control plane sits
+ * behind an edge proxy (Tencent nginx) that hides the real Host to sidestep the
+ * cloud provider's ICP check (docs/k8s-deploy.md §7.4); the real domain arrives
+ * here. The subdomain auth check still validates the cookie against the slug, so
+ * a spoofed forwarded host cannot reach another user's DSH.
+ */
+function clientHost(headers: IncomingHttpHeaders): string | undefined {
+  const fwd = headers['x-forwarded-host']
+  if (typeof fwd === 'string' && fwd !== '') return fwd
+  if (Array.isArray(fwd) && fwd[0] !== '') return fwd[0]
+  return headers.host
+}
+
+/**
  * Resolve a subdomain Host to a DSH port, authenticating the caller: the session
  * cookie must belong to a non-disabled user whose username matches the subdomain.
  */
@@ -149,7 +163,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
 
   // Per-user subdomain: HTTP (intercept before normal routing).
   app.addHook('onRequest', async (request, reply) => {
-    const access = await resolveSubdomainAccess(app, request.headers.host, request.headers.cookie)
+    const access = await resolveSubdomainAccess(app, clientHost(request.headers), request.headers.cookie)
     if (access === null) return
     if ('error' in access) {
       reply.code(access.code).send({ error: access.error })
@@ -162,7 +176,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
   // the raw `upgrade` callback defers to an async IIFE before deciding to tunnel.
   app.server.on('upgrade', (req, socket, head) => {
     void (async () => {
-      const access = await resolveSubdomainAccess(app, req.headers.host, req.headers.cookie)
+      const access = await resolveSubdomainAccess(app, clientHost(req.headers), req.headers.cookie)
       if (access === null || 'error' in access) {
         socket.destroy()
         return
