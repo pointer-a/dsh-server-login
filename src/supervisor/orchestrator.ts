@@ -93,7 +93,7 @@ export class Supervisor {
     if (this.watchdogs.has(userId)) return this.watchdogs.get(userId)
     const main = this.mains.get(userId)
     if (main === undefined) return undefined
-    return await this.spawnInstance(userId, 'watchdog', main.folder)
+    return await this.spawnInstance(userId, 'watchdog', main.folder, main.patchPath)
   }
 
   /** Current main + watchdog for a user. */
@@ -164,12 +164,12 @@ export class Supervisor {
 
     const [command = 'dsh', ...args] = this.config.dshCommand
     const launchArgs = ['--profile', role === 'main' ? 'web' : 'headless']
+    // --patch is a launcher flag and must precede any app/inner args (--host/--port
+    // for web, the task string for headless): dsh forwards the first unrecognized
+    // token onward, so a trailing --patch reaches the app as an unknown option.
+    // Off by default so the child boots even on older dsh versions.
+    if (this.config.enablePatch && patchPath !== undefined) launchArgs.push('--patch', patchPath)
     if (role === 'main') {
-      // --patch is a launcher flag and must precede the app flags (--host/--port):
-      // dsh forwards the first unrecognized token onward, so a trailing --patch
-      // reaches the web app as an unknown option. Off by default so the child
-      // boots even on older dsh versions.
-      if (this.config.enablePatch && patchPath !== undefined) launchArgs.push('--patch', patchPath)
       launchArgs.push('--host', '127.0.0.1', '--port', String(port))
     } else {
       launchArgs.push(WATCHDOG_TASK)
