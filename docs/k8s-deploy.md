@@ -300,6 +300,9 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
   建用户再 initUserRoot。
 - **就绪探针**：DSH 只监听 loopback，`tcpSocket 8080` 探的是 Pod IP、永远不 Ready →
   Headless 无 A 记录 → 子域 502。改成容器内 `node -e http.get(127.0.0.1:8080)` exec 探针。
+- **子域代理端口**：Headless Service（clusterIP: None）没有 kube-proxy 做 DNAT，代理
+  必须直连 Pod 的 targetPort（sidecar 8081），不能连 Service port 80——否则 502。
+  `endpointFor` 返回 8081。
 
 ### 7.4 域名入口被阿里云备案拦截
 

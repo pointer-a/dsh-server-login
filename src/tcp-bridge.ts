@@ -6,7 +6,7 @@
  * @module dsh-server-login/tcp-bridge
  */
 
-import { createServer, type Server } from 'node:net'
+import { createConnection, createServer, type Server } from 'node:net'
 
 /**
  * Start a TCP bridge: `listen` (e.g. `0.0.0.0:8081`) → `target`
@@ -15,7 +15,9 @@ import { createServer, type Server } from 'node:net'
 export function startTcpBridge(listen: string, target: string): Promise<Server> {
   const [targetHost, targetPort] = splitHostPort(target)
   const server = createServer((socket) => {
-    const upstream = socket.connect(Number(targetPort), targetHost)
+    // A fresh outbound connection to the target — NOT `socket.connect`, which
+    // would try to re-connect the already-connected inbound socket.
+    const upstream = createConnection(Number(targetPort), targetHost)
     upstream.on('error', () => socket.destroy())
     socket.on('error', () => upstream.destroy())
     socket.pipe(upstream)
