@@ -16,7 +16,10 @@ import { hashSessionToken, parseCookie } from '../web/auth.js'
 import { requireAuth } from '../web/middleware/authn.js'
 import type { Endpoint } from './spawner.js'
 
-const upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
+// Keep-alive pool for per-user DSH upstreams. Replaced (not just destroyed) on a
+// connection error, because a Pod rebuild changes its IP and any pooled socket
+// to the old IP would keep failing (docs/k8s.md §5.4).
+let upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
 
 // Headers the DSH's browser-trust fence must NOT see from the browser, so the
 // proxied request looks like a clean loopback client (its Host is overridden to
@@ -147,9 +150,10 @@ function proxyHttp(
         reply.raw.destroy()
         return
       }
-      // A stale keep-alive socket or a Pod that just restarted: drop the pool
-      // and retry once on a fresh connection.
+      // A stale keep-alive socket or a Pod that just restarted: drop the pool,
+      // replace it with a fresh one, and retry once on a fresh connection.
       upstreamAgent.destroy()
+      upstreamAgent = new Agent({ keepAlive: true, maxSockets: 32 })
       request.raw.unpipe(upstream)
       attempt(true)
     })

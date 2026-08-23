@@ -141,12 +141,16 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       encrypt(apiKey, deriveKey(app.config.encryptionSecret)),
     )
     await app.db.audit(request.user!.id, 'set_api_key', JSON.stringify({ name: cleanName }))
+    // 换 key 后重建 DSH Pod：DEEPSEEK_API_KEY 是启动时从 Secret 快照进 env 的，
+    // 不重建不会生效（docs/k8s.md §4.3 改 key 联动）。
+    await app.supervisor.restartMain(request.user!.id)
     return { key }
   })
 
   app.post('/api/me/keys/:id/select', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params as { id: string }
     if (!(await app.db.selectCredentialKey(request.user!.id, id))) return reply.code(404).send({ error: 'not_found' })
+    await app.supervisor.restartMain(request.user!.id)
     return { ok: true }
   })
 
