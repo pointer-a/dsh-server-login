@@ -36,6 +36,7 @@
 
     <script>
       const badge = { admin: '管理员', pending: '待审核', active: '正常', disabled: '已禁用' }
+      function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) }
       async function me() {
         const res = await fetch('/api/auth/me')
         return res.ok ? (await res.json()).user : null
@@ -49,7 +50,7 @@
             ? `<button class="btn small ghost" data-act="approve" data-id="${u.id}">通过</button>`
             : u.role === 'active' ? `<button class="btn small danger" data-act="disable" data-id="${u.id}">禁用</button>`
             : u.role === 'disabled' ? `<button class="btn small ghost" data-act="enable" data-id="${u.id}">恢复</button>` : ''
-          tbody.insertAdjacentHTML('beforeend', `<tr><td>${u.username}</td><td><span class="badge ${u.role}">${badge[u.role] || u.role}</span></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${actions}</td></tr>`)
+          tbody.insertAdjacentHTML('beforeend', `<tr><td>${esc(u.username)}</td><td><span class="badge ${u.role}">${badge[u.role] || u.role}</span></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${actions}</td></tr>`)
         }
         tbody.onclick = async (event) => {
           const btn = event.target.closest('button[data-act]')

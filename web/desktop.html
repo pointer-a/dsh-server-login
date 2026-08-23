@@ -281,7 +281,7 @@
           const tile = e.type === 'dir'
             ? '<div class="tile files"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>'
             : '<div class="tile file"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></div>'
-          icon.innerHTML = tile + '<span class="label">' + e.name + '</span>'
+          icon.innerHTML = tile + '<span class="label">' + esc(e.name) + '</span>'
           fileIcons.appendChild(icon)
         }
         fileIcons.querySelectorAll('.desk-icon').forEach((icon) => {
@@ -327,7 +327,7 @@
         if (p) rows.insertAdjacentHTML('beforeend', '<tr><td class="dir" data-up="1">..</td><td></td><td></td><td></td></tr>')
         for (const e of body.entries || []) {
           const href = e.type === 'dir' ? ' class="dir" data-path="' + encodeURIComponent(p ? p + '/' + e.name : e.name) + '"' : ''
-          rows.insertAdjacentHTML('beforeend', `<tr><td${href}>${e.name}</td><td>${e.type === 'dir' ? '文件夹' : '文件'}</td><td>${fmtSize(e.size)}</td><td>${new Date(e.mtimeMs).toLocaleString()}</td></tr>`)
+          rows.insertAdjacentHTML('beforeend', `<tr><td${href}>${esc(e.name)}</td><td>${e.type === 'dir' ? '文件夹' : '文件'}</td><td>${fmtSize(e.size)}</td><td>${new Date(e.mtimeMs).toLocaleString()}</td></tr>`)
         }
         renderBreadcrumb()
         rows.querySelectorAll('.dir[data-path]').forEach((el) => el.addEventListener('click', () => navigate(decodeURIComponent(el.dataset.path))))
@@ -337,6 +337,12 @@
 
       // ---------- upload / new file ----------
       const fsErrorText = { exists: '名称已存在', bad_path: '路径无效', bad_name: '名称无效', parent_missing: '上级目录不存在', not_found: '目录不存在' }
+      // HTML-escape any user-controlled string before splicing into innerHTML
+      // (filenames, plugin names/descriptions — unlike username they are not
+      // restricted to a safe charset).
+      function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+      }
       async function fsApi(path, options) {
         const res = await fetch(path, { ...options, headers: { 'content-type': 'application/json' } })
         if (!res.ok) {
@@ -422,7 +428,7 @@
           const act = k.enabled
             ? '<span style="font-size:12px;color:var(--ok)">启用中</span>'
             : `<button class="btn small ghost" data-sel="${k.id}">启用</button>`
-          row.innerHTML = `${dot} <strong>${k.name}</strong> <span style="flex:1"></span> ${act} <button class="btn small danger" data-del="${k.id}" style="margin-left:6px">删除</button>`
+          row.innerHTML = `${dot} <strong>${esc(k.name)}</strong> <span style="flex:1"></span> ${act} <button class="btn small danger" data-del="${k.id}" style="margin-left:6px">删除</button>`
           list.appendChild(row)
         }
         list.querySelectorAll('[data-sel]').forEach((b) => b.addEventListener('click', async () => {
@@ -463,7 +469,7 @@
         for (const plugin of plugins) {
           const label = document.createElement('label')
           label.className = 'plugin-item'
-          label.innerHTML = `<input type="checkbox" data-id="${plugin.id}" ${plugin.enabled ? 'checked' : ''}/> <strong>${plugin.name}</strong> — ${plugin.description || ''}`
+          label.innerHTML = `<input type="checkbox" data-id="${plugin.id}" ${plugin.enabled ? 'checked' : ''}/> <strong>${esc(plugin.name)}</strong> — ${esc(plugin.description || '')}`
           list.appendChild(label)
         }
       }
@@ -490,7 +496,7 @@
             ? `<button class="btn small ghost" data-act="approve" data-id="${u.id}">通过</button>`
             : u.role === 'active' ? `<button class="btn small danger" data-act="disable" data-id="${u.id}">禁用</button>`
             : u.role === 'disabled' ? `<button class="btn small ghost" data-act="enable" data-id="${u.id}">恢复</button>` : ''
-          tbody.insertAdjacentHTML('beforeend', `<tr><td>${u.username}</td><td><span class="badge ${u.role}">${badge[u.role] || u.role}</span></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${actions}</td></tr>`)
+          tbody.insertAdjacentHTML('beforeend', `<tr><td>${esc(u.username)}</td><td><span class="badge ${u.role}">${badge[u.role] || u.role}</span></td><td>${new Date(u.createdAt).toLocaleString()}</td><td>${actions}</td></tr>`)
         }
         tbody.onclick = async (event) => {
           const btn = event.target.closest('button[data-act]')
