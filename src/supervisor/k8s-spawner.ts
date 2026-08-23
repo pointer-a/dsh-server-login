@@ -544,7 +544,7 @@ export class K8sSpawner implements Spawner {
               readinessProbe: { tcpSocket: { port: FILE_SERVICE_PORT }, initialDelaySeconds: 2, periodSeconds: 3 },
               volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
               securityContext: containerSecurity(uid),
-              resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { cpu: '100m', memory: '64Mi' } },
+              resources: { requests: { cpu: '50m', memory: '128Mi' }, limits: { cpu: '200m', memory: '256Mi' } },
             },
           ],
           volumes: [...dataVolume(), ...dataRootVolume()],

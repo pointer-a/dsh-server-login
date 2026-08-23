@@ -239,3 +239,50 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
   -- pgbench -i -s 5
 # 等 pod phase=Succeeded 后 kubectl logs；跑完 kubectl delete pod
 ```
+
+---
+
+## 7. Phase 3 集群联调踩坑（2026-08-23，第二阶段）
+
+> 控制面 `deployMode=k8s` + leader election + file sidecar + 每用户 Pod 在 ACK
+> 上联调的实跑记录。前一个阶段（§5）只把控制面 3 副本 + CNPG 跑通了。
+
+### 7.1 部署顺序（缺一步就挂，按序执行）
+
+1. `deploy/00-namespace.yaml` → `01-dsh-pg.yaml`（Postgres healthy）→ 读 `dsh-pg-app` URI 建 `dsh-pg`/`dsh-secret`/`dsh-acr-pull` secret。
+2. **`deploy/03-rbac.yaml`**（SA + Role + lease 权限）。漏了它，控制面 Deployment 报
+   `FailedCreate: serviceaccount "dsh-orchestrator" not found`，滚动更新卡死。
+3. `deploy/02-control-plane.yaml`（含 `imagePullPolicy: Always`，同名 tag 否则节点
+   缓存旧镜像）。
+4. NAS：控制台建 **CNFS**（容器网络文件系统）→ 应用 `deploy/05-storage.yaml` 引 CNFS
+   → `04-pvc.yaml` → `08-bootstrap.yaml`（chmod 1777 PVC 根）→ **最后** `07-psa.yaml`。
+5. 每用户 Pod 依赖 `dsh-acr-pull`（§7.3）。
+
+### 7.2 NAS：用 CNFS，别手写 `server` 参数
+
+- 手写 `alicloud-nas` StorageClass 的 `server` 必须是**挂载目标域 + `:/`**，且
+  **不含 FileSystemId 前缀**。我给错成 `ap-24w40hkvbc.030l...cn-shanghai.nas.aliyuncs.com`
+  （带 FSID 前缀）→ provisioner 报 `CreateDir: IllegalCharacters`；去掉 `ap-24w40hkvbc.`
+  后 PVC 才 Bound。
+- 但挂载目标还会变（`-wkc31` → `-tjn95`），正确姿势是控制台建 **CNFS**
+  （`storage.alibabacloud.com/v1beta1 ContainerNetworkFileSystem`），StorageClass 用
+  `containerNetworkFileSystem: nas` 参数引用，provisioner 自动拿到当前挂载目标。
+- bootstrap Job 第一次卡 `ContainerCreating` 无事件 = NFS 挂载挂起（挂载目标错/VPC 不通）；
+  目标对了会报 `mount.nfs: Connection reset by peer`（通常是安全组/访问组或目标刚就绪）。
+
+### 7.3 每用户 Pod 镜像拉取
+
+- 控制面镜像在**私有 ACR**，生成的 files Pod / DSH Pod / watchdog Job **必须带
+  `imagePullSecrets: [dsh-acr-pull]`**——控制面 Deployment 有，但生成的 Pod 不继承。
+  漏了就是 `Init:ImagePullBackOff insufficient_scope`。代码里 config `imagePullSecret`
+  默认 `dsh-acr-pull`，已在 K8sSpawner 生成的三类 Pod/Job 全部带上。
+- bootstrap Job 也需 `imagePullSecrets` + 用控制面镜像（busybox 从 docker.io 拉不动）。
+
+### 7.4 域名入口被阿里云备案拦截
+
+- 腾讯云入口机 nginx 反代到 ACK 公网 SLB（`8.153.12.52`）时，`Host: dsh.xulei1112.cloud`
+  被阿里云返回 `403 Non-compliance ICP Filing`（`Server: Beaver`）——域名在腾讯云备案、
+  未在阿里云备案，走阿里云公网 SLB 的 80/443 被备案校验拦。直连 SLB IP（不带域名 Host）
+  则 200 正常。
+- 解法：给域名在阿里云做 ICP 备案，或入口走 NodePort/专线绕开公网 SLB 备案层，或
+  控制面域名解析子域改用「SLB 直连 + 腾讯云 nginx 透传 Host」之外的方案（待定）。
