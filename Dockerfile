@@ -34,6 +34,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/lib ./lib
 COPY web ./web
 COPY cordis.patch.yml ./
+# npm is build-only: drop it (and its bundled deps) from the runtime image —
+# they carry their own CVEs (brace-expansion/tar/sigstore/...) and bloat.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 # Non-root uid 65532, matching docs/k8s.md §4.2 (PSA restricted-friendly).
 RUN groupadd --gid 65532 dsh \
   && useradd --uid 65532 --gid dsh --home-dir /home/dsh --create-home --shell /usr/sbin/nologin dsh
