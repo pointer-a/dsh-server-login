@@ -316,3 +316,71 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
   则 200 正常。
 - 解法：给域名在阿里云做 ICP 备案，或入口走 NodePort/专线绕开公网 SLB 备案层，或
   控制面域名解析子域改用「SLB 直连 + 腾讯云 nginx 透传 Host」之外的方案（待定）。
+
+---
+
+## 8. Phase 4 加固 / 可观测（2026-08-23）
+
+### 8.1 代码加固（已落地，随镜像生效）
+
+- `readOnlyRootFilesystem: true` + `emptyDir` `/tmp`：DSH dsh/sidecar、file sidecar、
+  watchdog、控制面容器全部只读 rootfs，`/tmp` 走 emptyDir（PSA restricted 纵深）。
+- 空闲回收：reconcile（仅 leader）对每个期望 main 检查 `hasActiveSession`，会话全过期
+  → `stop` Pod + 删期望态，不自动拉起（复用 `sessionTtlSeconds`，默认 7 天）。
+- egress 收敛：`DSH_SERVER_LOGIN_EGRESS_CIDRS`（逗号分隔 CIDR）非空时，每用户 DSH Pod 的
+  443 egress 从 `0.0.0.0/0` 收敛为白名单（仍 except 内网）。默认空 = 保持现状。
+  ⚠️ DeepSeek API 走 CDN，IP 会漂移，收敛前先 `dig +short api.deepseek.com` 核对并定期重查。
+
+### 8.2 etcd encryption-at-rest（ACK 托管，控制台操作）
+
+1. ACK 控制台 → 集群 → 托管控制面 → 开启 **etcd 加密**（encryption-at-rest）。
+2. 开启后**必须全量重写存量 Secret**，否则旧 Secret 仍明文：
+   ```bash
+   kubectl get secrets -A -o json | kubectl replace -f -
+   ```
+3. 验证（应只剩 `k8s:enc:aescbc:v1:` 前缀的密文）：
+   ```bash
+   kubectl get secrets --all-namespaces -o json | grep -v 'k8s:enc:aescbc' || echo "all encrypted"
+   ```
+   覆盖 `dsh-key-*`（每用户 API key）、`dsh-pg`（DB DSN）、`dsh-secret`（共享加密密钥）。
+
+### 8.3 可观测（Prometheus + Loki + 告警）
+
+- **指标**：控制面已可暴露 `/metrics`（未接入则用 prom-client 加一个）；ACK 托管 Prometheus
+  （ARMS）在控制台开通后，用 ServiceMonitor 抓 `dsh-orchestrator` 的 3080。
+  关键指标：控制面副本数、Postgres 连接数、每用户 Pod 数、崩溃计数。
+- **日志**：Loki + Promtail（或 ACK SLS）接入控制面与每用户 Pod 日志。
+- **告警规则**（Prometheus）：控制面副本 < 3、Postgres 不可写、DSH Pod 崩溃率、NAS 容量水位。
+  示例（自建 Prometheus 时用）：
+  ```yaml
+  apiVersion: monitoring.coreos.com/v1
+  kind: PrometheusRule
+  metadata: { name: dsh-alerts, namespace: dsh }
+  spec:
+    groups:
+      - name: dsh
+        rules:
+          - alert: DshControlPlaneDown
+            expr: count(up{app="dsh-orchestrator"}) < 3
+            for: 5m
+          - alert: DshPostgresUnavailable
+            expr: pg_up == 0
+            for: 2m
+  ```
+  注：托管 Prometheus/Loki 实际接入需在 ACK 控制台开通，本轮交付清单与步骤。
+
+### 8.4 Web 安全审计（代码审计结论，2026-08-23）
+
+- **XSS（已修）**：`desktop.html`/`admin.html` 把文件名 `e.name`、插件名/描述
+  `plugin.name`/`plugin.description`、密钥名 `k.name`、用户名 `u.username` 直接拼进
+  `innerHTML`/`insertAdjacentHTML`。文件名与插件描述不受字符集约束 → 存储型 XSS。
+  已加 `esc()` 转义 `<>&"'` 后再拼接。
+- **输入校验（已确认安全）**：用户名 `^[a-zA-Z0-9_-]+$`、域名 `isValidDomain`
+  （小写字母数字+连字符，防 nginx 注入）、密钥名 `^[A-Za-z0-9\-_ .]{1,32}$`、路径
+  `resolveWithinRoot`/`safeFilename`。
+- **CSRF（残余低风险，未修）**：会话 cookie 为 `SameSite=None` 后跨站请求也会带
+  cookie，但所有状态变更端点都是 `application/json` + 无 CORS 头，跨站 fetch 会触发
+  preflight 被浏览器拦；真正暴露的是无 body 的 `POST /api/auth/logout`（logout CSRF，
+  低危）。后续若要加固，给状态变更端点加 CSRF token / 自定义头校验。
+- **OWASP ZAP 基线扫描**：未在本轮执行（需 ZAP 工具/容器）。已定位的 XSS 已人工修，
+  ZAP 可作为 CI 门禁后续接入。
