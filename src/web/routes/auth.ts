@@ -6,9 +6,8 @@
 
 import type { FastifyPluginAsync } from 'fastify'
 import { randomUUID } from 'node:crypto'
-import { chmodSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
+import { homeRoot, userRoot } from '../../fs/workspace.js'
 import { deriveKey, encrypt } from '../../crypto.js'
 import { toPublicUser } from '../../db/types.js'
 import {
@@ -60,9 +59,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         return reply.code(409).send({ error: 'username_taken' })
       }
       const id = randomUUID()
-      const homeDir = join(app.config.dataRoot, 'users', id, 'home')
-      mkdirSync(homeDir, { recursive: true })
-      chmodSync(homeDir, 0o700)
+      const homeDir = homeRoot(userRoot(app.config.dataRoot, id))
+      await app.userFs.initUserRoot(id)
       const passHash = await hashPassword(password)
       await app.db.createUser({ id, username, passHash, role: 'pending', homeDir })
       await app.db.audit(id, 'register', JSON.stringify({ username }))

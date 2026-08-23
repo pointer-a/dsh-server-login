@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ServerConfig } from '../config.js'
+import { homeRoot } from './workspace.js'
 
 /** A plugin the user may enable per folder (`id` doubles as the package name). */
 export interface PluginInfo {
@@ -23,9 +23,9 @@ export const MAIN_PROFILE = 'web'
 /** Bundles under this scope come from the dsh installation, not the user. */
 const INSTALLATION_SCOPE = '@deepseek-ai/'
 
-/** Absolute profile directory for a user (`<dataRoot>/users/<id>/home/profiles/web`). */
-function profileDir(config: ServerConfig, userId: string): string {
-  return join(config.dataRoot, 'users', userId, 'home', 'profiles', MAIN_PROFILE)
+/** Absolute profile directory within a user root (`<root>/home/profiles/web`). */
+function profileDir(root: string): string {
+  return join(homeRoot(root), 'profiles', MAIN_PROFILE)
 }
 
 /** Read a package.json `description`, tolerating a missing/empty field or file. */
@@ -42,9 +42,10 @@ function readDescription(manifestPath: string): string {
  * List a user's installed plugins from their profile's `dsh.profile.bundles`,
  * minus installation-owned bundles. Returns `[]` when the profile (or a listed
  * package) has not been installed yet. Order follows the bundle layer order.
+ * @param root - the user's data root (see {@link userRoot}).
  */
-export function listInstalledPlugins(config: ServerConfig, userId: string): PluginInfo[] {
-  const dir = profileDir(config, userId)
+export function listInstalledPlugins(root: string): PluginInfo[] {
+  const dir = profileDir(root)
   let manifest: { dsh?: { profile?: { bundles?: string[] } } }
   try {
     manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))

@@ -9,11 +9,11 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { chmodSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveConfig, type ConfigOverrides } from './config.js'
 import { createDbAdapter } from './db/index.js'
+import { createUserFs } from './fs/provider.js'
+import { homeRoot, userRoot } from './fs/workspace.js'
 import { hashPassword } from './web/auth.js'
 import { hashUid } from './isolation.js'
 import { buildServer } from './web/server.js'
@@ -89,9 +89,8 @@ async function bootstrapAdmin(args: string[]): Promise<void> {
     process.exit(1)
   }
   const id = randomUUID()
-  const homeDir = join(config.dataRoot, 'users', id, 'home')
-  mkdirSync(homeDir, { recursive: true })
-  chmodSync(homeDir, 0o700)
+  const homeDir = homeRoot(userRoot(config.dataRoot, id))
+  await createUserFs(config).initUserRoot(id)
   const passHash = await hashPassword(password)
   await db.createUser({ id, username, passHash, role: 'admin', homeDir })
   await db.close()

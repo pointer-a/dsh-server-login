@@ -1,23 +1,48 @@
 /**
- * Per-user workspace filesystem helpers. The workspace root is derived from
- * `dataRoot` + the user id, so it is deterministic and never needs to round-trip
- * through the DB. Isolation is enforced by the caller (see fs-guard).
+ * Per-user filesystem layout + low-level helpers. This module is the single
+ * place that knows the `users/<id>/{home,ws}` shape — the control plane, the
+ * local spawner, the k8s Pod spec, and the file sidecar all derive their paths
+ * from here so the four never drift apart.
+ *
+ * Isolation is enforced by the caller (see fs-guard).
  * @module dsh-server-login/fs/workspace
  */
 
 import { mkdirSync } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ServerConfig } from '../config.js'
 
-/** Absolute workspace root for a user (`<dataRoot>/users/<id>/ws`). */
-export function workspaceRoot(config: ServerConfig, userId: string): string {
-  return join(config.dataRoot, 'users', userId, 'ws')
+// Layout segment names. Exported so the k8s Pod spec can build the same layout
+// with POSIX separators (`join` would emit backslashes when the control plane
+// is developed/tested on Windows) without duplicating the literals.
+export const USERS_DIR = 'users'
+export const WORKSPACE_DIR = 'ws'
+export const HOME_DIR = 'home'
+export const HANDOFF_FILE = 'handoff.json'
+
+/** A user's own data root (`<dataRoot>/users/<id>`). */
+export function userRoot(dataRoot: string, userId: string): string {
+  return join(dataRoot, USERS_DIR, userId)
 }
 
-/** Create the workspace root (0700) if it does not exist. */
-export function ensureWorkspaceRoot(root: string): void {
-  mkdirSync(root, { recursive: true, mode: 0o700 })
+/** The workspace (user-visible files) within a user root. */
+export function workspaceRoot(root: string): string {
+  return join(root, WORKSPACE_DIR)
+}
+
+/** DSH's own state (profiles/sessions/credentials) within a user root. */
+export function homeRoot(root: string): string {
+  return join(root, HOME_DIR)
+}
+
+/** The watchdog command handoff within a user root. */
+export function handoffPath(root: string): string {
+  return join(root, HANDOFF_FILE)
+}
+
+/** Create a directory (0700) if it does not exist. */
+export function ensureDir(path: string): void {
+  mkdirSync(path, { recursive: true, mode: 0o700 })
 }
 
 /** One filesystem entry as returned to the desktop. */

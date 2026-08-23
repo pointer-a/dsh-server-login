@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
+import { handoffPath, homeRoot, userRoot, workspaceRoot } from '../fs/workspace.js'
 import { createPortGuard, type PortGuard } from './firewall.js'
 import { findFreePort, scrubEnv } from './spawn.js'
 import {
@@ -111,13 +112,13 @@ export class LocalSpawner implements Spawner {
   }
 
   private handoffPath(userId: string): string {
-    return join(this.config.dataRoot, 'users', userId, 'handoff.json')
+    return handoffPath(userRoot(this.config.dataRoot, userId))
   }
 
   /** Materialize the rendered patch so the dsh CLI can `--patch <file>` it.
    * Per role, so a watchdog spawning alongside its main never races the file. */
   private writePatch(userId: string, role: InstanceRole, patch: string): string {
-    const dir = join(this.config.dataRoot, 'users', userId, 'patches')
+    const dir = join(userRoot(this.config.dataRoot, userId), 'patches')
     mkdirSync(dir, { recursive: true })
     const path = join(dir, `${role}.yml`)
     writeFileSync(path, patch)
@@ -125,8 +126,9 @@ export class LocalSpawner implements Spawner {
   }
 
   private async baseEnv(userId: string): Promise<Record<string, string>> {
-    const home = join(this.config.dataRoot, 'users', userId, 'home')
-    const workspace = join(this.config.dataRoot, 'users', userId, 'ws')
+    const root = userRoot(this.config.dataRoot, userId)
+    const home = homeRoot(root)
+    const workspace = workspaceRoot(root)
     const apiKey = await this.resolveApiKey(userId)
     return {
       ...scrubEnv(process.env),

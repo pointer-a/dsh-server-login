@@ -8,9 +8,7 @@
 
 import type { FastifyPluginAsync } from 'fastify'
 import { requireAuth } from '../middleware/authn.js'
-import { resolveWithinRoot } from '../middleware/fs-guard.js'
-import { listInstalledPlugins } from '../../fs/plugins.js'
-import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
+import { sendFsError } from './desktop.js'
 
 const selectSchema = {
   body: {
@@ -41,32 +39,33 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
   app.get('/api/plugins', { preHandler: requireAuth }, async (request, reply) => {
     const { folder = '' } = request.query as { folder?: string }
     const user = request.user!
-    const root = workspaceRoot(app.config, user.id)
-    ensureWorkspaceRoot(root)
+    const fs = app.userFs
+    let installed
     try {
-      resolveWithinRoot(root, folder)
-    } catch {
-      return reply.code(400).send({ error: 'bad_path' })
+      fs.resolvePath(user.id, folder) // reject traversal before any DB work
+      installed = await fs.listInstalledPlugins(user.id)
+    } catch (err) {
+      return sendFsError(reply, err)
     }
     const workspace = await app.db.findWorkspaceByPath(user.id, folder)
     const enabled = workspace === undefined ? [] : await app.db.getEnabledPluginIds(workspace.id)
     return {
-      plugins: listInstalledPlugins(app.config, user.id).map((plugin) => ({ ...plugin, enabled: enabled.includes(plugin.id) })),
+      plugins: installed.map((plugin) => ({ ...plugin, enabled: enabled.includes(plugin.id) })),
     }
   })
 
   app.post('/api/plugins/select', { preHandler: requireAuth, schema: selectSchema }, async (request, reply) => {
     const { folder, plugins } = request.body as { folder: string; plugins: Selection[] }
     const user = request.user!
-    const root = workspaceRoot(app.config, user.id)
-    ensureWorkspaceRoot(root)
-    try {
-      resolveWithinRoot(root, folder)
-    } catch {
-      return reply.code(400).send({ error: 'bad_path' })
-    }
+    const fs = app.userFs
     // Allowlist: only persist ids the user actually has installed.
-    const catalogIds = new Set(listInstalledPlugins(app.config, user.id).map((plugin) => plugin.id))
+    let catalogIds: Set<string>
+    try {
+      fs.resolvePath(user.id, folder)
+      catalogIds = new Set((await fs.listInstalledPlugins(user.id)).map((plugin) => plugin.id))
+    } catch (err) {
+      return sendFsError(reply, err)
+    }
     const filtered = plugins.filter((plugin) => catalogIds.has(plugin.id))
     const workspace = await app.db.getOrCreateWorkspace(user.id, folder)
     await app.db.setFolderPlugins(workspace.id, filtered)

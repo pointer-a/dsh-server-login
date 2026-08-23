@@ -7,12 +7,8 @@
  */
 
 import type { FastifyPluginAsync } from 'fastify'
-import { mkdirSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { requireAuth } from '../middleware/authn.js'
-import { resolveWithinRoot } from '../middleware/fs-guard.js'
-import { ensureWorkspaceRoot, workspaceRoot } from '../../fs/workspace.js'
-import { listInstalledPlugins } from '../../fs/plugins.js'
+import { sendFsError } from './desktop.js'
 import { AlreadyRunningError } from '../../supervisor/orchestrator.js'
 import { renderPatch } from '../../supervisor/patch.js'
 import { subdomainForUser } from '../../supervisor/proxy.js'
@@ -48,18 +44,13 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
   app.post('/api/dsh/launch', { preHandler: requireAuth, schema: launchSchema }, async (request, reply) => {
     const { folder } = request.body as { folder: string }
     const user = request.user!
-    const root = workspaceRoot(app.config, user.id)
-    ensureWorkspaceRoot(root)
+    const fs = app.userFs
     let folderAbs: string
     try {
-      folderAbs = resolveWithinRoot(root, folder)
-    } catch {
-      return reply.code(400).send({ error: 'bad_path' })
-    }
-    try {
-      if (!statSync(folderAbs).isDirectory()) return reply.code(400).send({ error: 'not_a_folder' })
-    } catch {
-      return reply.code(404).send({ error: 'not_found' })
+      folderAbs = fs.resolvePath(user.id, folder)
+      if (!(await fs.isDirectory(user.id, folder))) return reply.code(400).send({ error: 'not_a_folder' })
+    } catch (err) {
+      return sendFsError(reply, err)
     }
 
     // Per-folder plugin selection → cordis patch. Rendered here but *not*
@@ -70,7 +61,7 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
       const workspace = await app.db.findWorkspaceByPath(user.id, folder)
       // Only inject plugins the user still has installed; a stale selection for
       // a since-removed bundle would otherwise fail to resolve in the child DSH.
-      const installed = new Set(listInstalledPlugins(app.config, user.id).map((plugin) => plugin.id))
+      const installed = new Set((await fs.listInstalledPlugins(user.id)).map((plugin) => plugin.id))
       const enabled = (workspace === undefined ? [] : await app.db.getEnabledPluginIds(workspace.id))
         .filter((id) => installed.has(id))
       patch = renderPatch(enabled)
@@ -91,9 +82,7 @@ export const dshRoutes: FastifyPluginAsync = async (app) => {
   app.post('/api/dsh/restart', { preHandler: requireAuth, schema: restartSchema }, async (request, reply) => {
     const { command } = request.body as { command: string }
     const user = request.user!
-    const handoffPath = join(app.config.dataRoot, 'users', user.id, 'handoff.json')
-    mkdirSync(dirname(handoffPath), { recursive: true })
-    writeFileSync(handoffPath, JSON.stringify({ command, createdAt: Date.now() }))
+    await app.userFs.writeHandoff(user.id, JSON.stringify({ command, createdAt: Date.now() }))
     const instance = await app.supervisor.restartMain(user.id)
     if (instance === undefined) return reply.code(404).send({ error: 'not_running' })
     await app.supervisor.spawnWatchdog(user.id)

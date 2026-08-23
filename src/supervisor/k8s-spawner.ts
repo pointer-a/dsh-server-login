@@ -9,8 +9,8 @@
  */
 
 import * as k8s from '@kubernetes/client-node'
-import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
+import { HANDOFF_FILE, HOME_DIR, USERS_DIR, WORKSPACE_DIR } from '../fs/workspace.js'
 import { AlreadyRunningError, type Endpoint, type Instance, type Spawner, type UserStatus } from './spawner.js'
 
 /** Loopback port the dsh container binds; the socat sidecar bridges 8081 → 8080. */
@@ -34,10 +34,15 @@ function names(userId: string): { pod: string; service: string; networkPolicy: s
   }
 }
 
-/** Home/workspace paths inside the DSH Pod (docs/k8s.md §4.3). */
+/** The data root inside every per-user Pod, independent of the control plane's
+ * own `dataRoot` (which under k8s points at a volume the Pod never sees). */
+const POD_DATA_ROOT = '/var/lib/dsh-server-login'
+
+/** Home/workspace paths inside the DSH Pod (docs/k8s.md §4.3). Built with
+ * POSIX separators — the control plane may be developed/tested on Windows. */
 function userPaths(userId: string): { home: string; ws: string; mount: string } {
-  const mount = `/var/lib/dsh-server-login/users/${userId}`
-  return { home: `${mount}/home`, ws: `${mount}/ws`, mount }
+  const mount = `${POD_DATA_ROOT}/${USERS_DIR}/${userId}`
+  return { home: `${mount}/${HOME_DIR}`, ws: `${mount}/${WORKSPACE_DIR}`, mount }
 }
 
 /** Pod-safe labels shared by Pod/Service/NetworkPolicy/Job. */
@@ -142,7 +147,7 @@ export class K8sSpawner implements Spawner {
                   { name: 'HOME', value: ws },
                   { name: 'DSH_HOME', value: home },
                   { name: 'DSH_SERVER_LOGIN_ROLE', value: 'watchdog' },
-                  { name: 'DSH_SERVER_LOGIN_HANDOFF_PATH', value: join(mount, 'handoff.json') },
+                  { name: 'DSH_SERVER_LOGIN_HANDOFF_PATH', value: `${mount}/${HANDOFF_FILE}` },
                   ...apiKeyEnv(this.namespace, userId, apiKey),
                 ],
                 volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
@@ -154,7 +159,7 @@ export class K8sSpawner implements Spawner {
         },
       },
     } })
-    return { id: n.job, userId, role: 'watchdog', folder: join(mount, 'ws'), status: 'starting' }
+    return { id: n.job, userId, role: 'watchdog', folder: ws, status: 'starting' }
   }
 
   async status(userId: string): Promise<UserStatus> {

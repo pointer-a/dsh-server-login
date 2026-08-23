@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { createDbAdapter, type DbAdapter, type PublicUser } from '../db/index.js'
+import { createUserFs } from '../fs/provider.js'
+import type { UserFs } from '../fs/user-fs.js'
 import { decrypt, deriveKey } from '../crypto.js'
 import { hashUid } from '../isolation.js'
 import { LocalSpawner } from '../supervisor/orchestrator.js'
@@ -29,6 +31,7 @@ declare module 'fastify' {
     db: DbAdapter
     config: ServerConfig
     supervisor: Spawner
+    userFs: UserFs
   }
   interface FastifyRequest {
     user: PublicUser | null
@@ -72,6 +75,7 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
   app.decorate('db', db)
   app.decorate('config', config)
   app.decorate('supervisor', supervisor)
+  app.decorate('userFs', createUserFs(config))
   app.decorateRequest('user', null)
 
   // Reverse proxy (subdomain + legacy subpath). Registered first so its global
