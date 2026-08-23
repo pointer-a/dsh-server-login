@@ -6,7 +6,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { join } from 'node:path'
 
 /** Isolation tier. `soft` = per-user home/workspace + sandbox (same OS user);
@@ -67,6 +67,8 @@ export interface ServerConfig {
   controlPlaneImage: string
   /** ServiceAccount the orchestrator runs as (k8s mode only). */
   k8sServiceAccount: string
+  /** This replica's identity for leader election (POD_NAME, else hostname). */
+  podName: string
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -95,6 +97,7 @@ export interface ConfigOverrides {
   dshImage?: string
   controlPlaneImage?: string
   k8sServiceAccount?: string
+  podName?: string
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -217,5 +220,6 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
       overrides.controlPlaneImage ?? process.env.DSH_SERVER_LOGIN_CONTROL_PLANE_IMAGE ?? '',
     k8sServiceAccount:
       overrides.k8sServiceAccount ?? process.env.DSH_SERVER_LOGIN_K8S_SERVICE_ACCOUNT ?? DEFAULT_K8S_SERVICE_ACCOUNT,
+    podName: overrides.podName ?? process.env.POD_NAME ?? hostname(),
   }
 }

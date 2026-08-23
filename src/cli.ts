@@ -17,6 +17,9 @@ import { createUserFs } from './fs/provider.js'
 import { homeRoot, userRoot } from './fs/workspace.js'
 import { hashPassword } from './web/auth.js'
 import { hashUid } from './isolation.js'
+import { LeaderElector } from './supervisor/leader.js'
+import { ReconcileController } from './supervisor/reconcile.js'
+import { K8sSpawner } from './supervisor/k8s-spawner.js'
 import { buildFileService, FILE_SERVICE_PORT, USER_ROOT_ENV } from './web/file-service.js'
 import { buildServer } from './web/server.js'
 
@@ -132,8 +135,20 @@ async function runServer(args: string[]): Promise<void> {
   app.log.info(`dsh-server-login listening on http://${config.host}:${actualPort}`)
   app.log.info(`data root: ${config.dataRoot}; db: ${config.dbPath}`)
 
+  // In k8s mode, only the elected leader runs the controller (reconcile + Pod
+  // watch). The web layer serves on every replica.
+  let controller: ReconcileController | undefined
+  if (config.deployMode === 'k8s') {
+    const spawner = app.supervisor as K8sSpawner
+    const elector = new LeaderElector({ namespace: config.k8sNamespace, identity: config.podName })
+    controller = new ReconcileController(app.db, spawner, elector)
+    await controller.start()
+    app.log.info(`leader election started (identity ${config.podName})`)
+  }
+
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info(`received ${signal}, shutting down`)
+    controller?.stop()
     await app.close()
     process.exit(0)
   }

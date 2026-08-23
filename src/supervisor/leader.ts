@@ -1,0 +1,224 @@
+/**
+ * Hand-rolled leader election over `coordination.k8s.io/v1` Lease
+ * (docs/k8s.md §5.3). `@kubernetes/client-node` ships no election helper, so
+ * this holds the small state machine: try to create the lease, and when it
+ * already exists either renew (we hold it) or take it over only after the
+ * holder's renew time has exceeded `leaseDurationSeconds`.
+ *
+ * Timings follow the doc's anti-split-brain ordering
+ * `LeaseDuration > RenewDeadline > RetryPeriod`.
+ * @module dsh-server-login/supervisor/leader
+ */
+
+import * as k8s from '@kubernetes/client-node'
+import { hostname } from 'node:os'
+
+/** The fencing token a controller stamps onto resources it creates. */
+export interface Fencing {
+  holder: string
+  operationId: number
+}
+
+export interface LeaderOptions {
+  identity?: string
+  leaseName?: string
+  namespace: string
+  leaseDurationSeconds?: number
+  renewDeadlineSeconds?: number
+  retryPeriodSeconds?: number
+  /** Injectable clock (tests); defaults to Date.now. */
+  now?: () => number
+  onStartedLeading?: (fencing: Fencing) => void
+  onStoppedLeading?: () => void
+  /** Injectable lease client (tests); defaults to the in-cluster config. */
+  coordination?: k8s.CoordinationV1Api
+}
+
+/** Acquire/keep a Lease, notifying callers across leadership changes. */
+export class LeaderElector {
+  private readonly coordination: k8s.CoordinationV1Api
+  private readonly identity: string
+  private readonly leaseName: string
+  private readonly namespace: string
+  private readonly leaseDurationSeconds: number
+  private readonly renewDeadlineSeconds: number
+  private readonly retryPeriodSeconds: number
+  private readonly now: () => number
+  private onStartedLeading?: (fencing: Fencing) => void
+  private onStoppedLeading?: () => void
+
+  private leading = false
+  private operationId = 0
+  private lastRenew = 0
+  private timer: NodeJS.Timeout | undefined
+
+  constructor(options: LeaderOptions) {
+    if (options.coordination !== undefined) {
+      this.coordination = options.coordination
+    } else {
+      const kc = new k8s.KubeConfig()
+      kc.loadFromCluster()
+      this.coordination = kc.makeApiClient(k8s.CoordinationV1Api)
+    }
+    this.identity = options.identity ?? process.env.POD_NAME ?? hostname()
+    this.leaseName = options.leaseName ?? 'dsh-orchestrator'
+    this.namespace = options.namespace
+    this.leaseDurationSeconds = options.leaseDurationSeconds ?? 15
+    this.renewDeadlineSeconds = options.renewDeadlineSeconds ?? 10
+    this.retryPeriodSeconds = options.retryPeriodSeconds ?? 2
+    this.now = options.now ?? Date.now
+    this.onStartedLeading = options.onStartedLeading
+    this.onStoppedLeading = options.onStoppedLeading
+  }
+
+  get isLeader(): boolean {
+    return this.leading
+  }
+
+  /** Wire (or rewire) leadership callbacks. The controller owns the reaction,
+   * not the elector, so it attaches itself here. */
+  setLeadershipCallbacks(onStarted?: (fencing: Fencing) => void, onStopped?: () => void): void {
+    this.onStartedLeading = onStarted
+    this.onStoppedLeading = onStopped
+  }
+
+  /** The current fencing token (valid only while {@link isLeader}). */
+  get fencing(): Fencing {
+    return { holder: this.identity, operationId: this.operationId }
+  }
+
+  /** Start the acquire/renew loop. Resolves once started (does not wait for leadership). */
+  async start(): Promise<void> {
+    if (this.timer !== undefined) return
+    await this.tryAcquire()
+  }
+
+  /** Stop the loop and yield leadership if held. */
+  stop(): void {
+    if (this.timer !== undefined) {
+      clearTimeout(this.timer)
+      this.timer = undefined
+    }
+    if (this.leading) {
+      this.leading = false
+      this.onStoppedLeading?.()
+    }
+  }
+
+  /** One acquire/renew round, rescheduling itself with retry/backoff. */
+  private async tryAcquire(): Promise<void> {
+    try {
+      if (this.leading) {
+        await this.renew()
+      } else {
+        await this.acquire()
+      }
+    } catch {
+      // Transient API/network failure: retry. Leadership is only lost after the
+      // renewDeadline elapses without a successful renew, checked in the loop.
+    }
+    this.scheduleNext()
+  }
+
+  private scheduleNext(): void {
+    if (this.timer !== undefined) return
+    // When leader, renew well inside renewDeadline; otherwise back off and retry.
+    const delay = this.leading ? Math.min(this.renewDeadlineSeconds / 2, this.retryPeriodSeconds) : this.retryPeriodSeconds
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      if (this.leading && this.now() - this.lastRenew > this.renewDeadlineSeconds * 1000) {
+        // Too long without a successful renew → another holder may have taken over.
+        this.leading = false
+        this.onStoppedLeading?.()
+      }
+      void this.tryAcquire()
+    }, delay * 1000)
+    this.timer.unref?.()
+  }
+
+  private lease(now: number, transitions: number): k8s.V1Lease {
+    return {
+      apiVersion: 'coordination.k8s.io/v1',
+      kind: 'Lease',
+      metadata: { name: this.leaseName, namespace: this.namespace },
+      spec: {
+        holderIdentity: this.identity,
+        leaseDurationSeconds: this.leaseDurationSeconds,
+        acquireTime: new k8s.V1MicroTime(now),
+        renewTime: new k8s.V1MicroTime(now),
+        leaseTransitions: transitions,
+      },
+    }
+  }
+
+  private async acquire(): Promise<void> {
+    try {
+      await this.coordination.createNamespacedLease({
+        namespace: this.namespace,
+        body: this.lease(this.now(), 0),
+      })
+      this.becomeLeader(0, this.now())
+    } catch (err) {
+      if ((err as { code?: number }).code !== 409) throw err
+      // Lease exists — take over only if the holder's renew time is stale.
+      const current = await this.coordination.readNamespacedLease({
+        name: this.leaseName,
+        namespace: this.namespace,
+      })
+      const holder = current.spec?.holderIdentity
+      const renew = current.spec?.renewTime?.getTime() ?? 0
+      if (holder === this.identity) {
+        // We already hold it (e.g. after a restart) — re-read for a fresh RV then renew.
+        const fresh = await this.coordination.readNamespacedLease({
+          name: this.leaseName,
+          namespace: this.namespace,
+        })
+        await this.renew(fresh.metadata?.resourceVersion)
+        this.becomeLeader(current.spec?.leaseTransitions ?? 0, this.now())
+        return
+      }
+      const expired = this.now() - renew > this.leaseDurationSeconds * 1000
+      if (!expired) return // a live leader holds it; back off
+      const transitions = (current.spec?.leaseTransitions ?? 0) + 1
+      await this.coordination.patchNamespacedLease({
+        name: this.leaseName,
+        namespace: this.namespace,
+        body: {
+          metadata: { resourceVersion: current.metadata?.resourceVersion },
+          spec: {
+            holderIdentity: this.identity,
+            acquireTime: new k8s.V1MicroTime(this.now()),
+            renewTime: new k8s.V1MicroTime(this.now()),
+            leaseTransitions: transitions,
+          },
+        },
+      })
+      this.becomeLeader(transitions, this.now())
+    }
+  }
+
+  private async renew(resourceVersion?: string): Promise<void> {
+    const now = this.now()
+    const rv =
+      resourceVersion ??
+      (await this.coordination.readNamespacedLease({ name: this.leaseName, namespace: this.namespace })).metadata
+        ?.resourceVersion
+    await this.coordination.patchNamespacedLease({
+      name: this.leaseName,
+      namespace: this.namespace,
+      body: {
+        metadata: rv === undefined ? {} : { resourceVersion: rv },
+        spec: { renewTime: new k8s.V1MicroTime(now) },
+      },
+    })
+    this.lastRenew = now
+  }
+
+  private becomeLeader(operationId: number, now: number): void {
+    const wasLeader = this.leading
+    this.leading = true
+    this.operationId = operationId
+    this.lastRenew = now
+    if (!wasLeader) this.onStartedLeading?.({ holder: this.identity, operationId })
+  }
+}

@@ -47,6 +47,14 @@ export interface Endpoint {
   port: number
 }
 
+/** A main DSH Pod as observed by the k8s backend (for reconcile + the watch). */
+export interface LivePod {
+  name: string
+  userId: string
+  running: boolean
+  crashed: boolean
+}
+
 /**
  * The lifecycle seam the route layer delegates to.
  *

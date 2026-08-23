@@ -13,7 +13,8 @@ import type { ServerConfig } from '../config.js'
 import type { DbAdapter } from '../db/adapter.js'
 import { HANDOFF_FILE, HOME_DIR, USERS_DIR, WORKSPACE_DIR } from '../fs/workspace.js'
 import { FILE_SERVICE_PORT, USER_ROOT_ENV } from '../web/file-service.js'
-import { AlreadyRunningError, type Endpoint, type Instance, type Spawner, type UserStatus } from './spawner.js'
+import type { Fencing } from './leader.js'
+import { AlreadyRunningError, type Endpoint, type Instance, type LivePod, type Spawner, type UserStatus } from './spawner.js'
 
 /** Loopback port the dsh container binds; the socat sidecar bridges 8081 → 8080. */
 const DSH_LOOPBACK_PORT = 8080
@@ -89,6 +90,14 @@ function dataRootVolume(): k8s.V1Volume[] {
   return [{ name: 'data-root', persistentVolumeClaim: { claimName: USERS_PVC } }]
 }
 
+/** Fencing labels stamped onto resources created by the leader, so a successor
+ * can identify work a dead leader left in flight (docs/k8s.md §5.3). */
+function stampFencing(labels: Record<string, string>, fencing: Fencing | undefined): void {
+  if (fencing === undefined) return
+  labels['dsh.io/holder'] = fencing.holder
+  labels['dsh.io/operation-id'] = String(fencing.operationId)
+}
+
 /**
  * K8s backend implementing {@link Spawner}. State lives in the cluster; every
  * method is a K8s API call (or a read).
@@ -98,6 +107,8 @@ export class K8sSpawner implements Spawner {
   private readonly networking: k8s.NetworkingV1Api
   private readonly batch: k8s.BatchV1Api
   private readonly namespace: string
+  private readonly kc: k8s.KubeConfig
+  private fencing: Fencing | undefined
 
   constructor(
     private readonly config: ServerConfig,
@@ -108,8 +119,8 @@ export class K8sSpawner implements Spawner {
   ) {
     // Injecting clients short-circuits cluster auth (used by tests). Otherwise
     // build them from the in-cluster config, which needs a mounted SA token.
+    const kc = new k8s.KubeConfig()
     if (clients === undefined) {
-      const kc = new k8s.KubeConfig()
       kc.loadFromCluster()
       clients = {
         core: kc.makeApiClient(k8s.CoreV1Api),
@@ -117,6 +128,7 @@ export class K8sSpawner implements Spawner {
         batch: kc.makeApiClient(k8s.BatchV1Api),
       }
     }
+    this.kc = kc
     this.core = clients.core
     this.networking = clients.networking
     this.batch = clients.batch
@@ -135,6 +147,11 @@ export class K8sSpawner implements Spawner {
     await this.ensurePod(n.pod, userId, uid, apiKey, hasPatch ? n.patch : undefined)
     await this.ensureService(n.service, userId)
     await this.ensureNetworkPolicy(n.networkPolicy, userId)
+    try {
+      await this.db.upsertInstance({ id: n.pod, userId, role: 'main', status: 'starting', folder, patch })
+    } catch (err) {
+      this.logError(err) // reconcile needs this row; don't fail the launch over it
+    }
     return { id: n.pod, userId, role: 'main', folder, status: 'starting', patch }
   }
 
@@ -150,14 +167,18 @@ export class K8sSpawner implements Spawner {
     const apiKey = await this.resolveApiKey(userId)
     const uid = await this.resolveUid(userId)
     const { home, ws, mount } = userPaths(userId)
+    const jobLabels = podLabels(userId)
+    const podTemplateLabels = podLabels(userId)
+    stampFencing(jobLabels, this.fencing)
+    stampFencing(podTemplateLabels, this.fencing)
     await this.batch.createNamespacedJob({ namespace: this.namespace, body: {
       apiVersion: 'batch/v1',
       kind: 'Job',
-      metadata: { name: n.job, namespace: this.namespace, labels: podLabels(userId) },
+      metadata: { name: n.job, namespace: this.namespace, labels: jobLabels },
       spec: {
         ttlSecondsAfterFinished: 300,
         template: {
-          metadata: { labels: podLabels(userId) },
+          metadata: { labels: podTemplateLabels },
           spec: {
             automountServiceAccountToken: false,
             restartPolicy: 'Never',
@@ -214,6 +235,11 @@ export class K8sSpawner implements Spawner {
     await this.ignoreNotFound(() => this.networking.deleteNamespacedNetworkPolicy({ name: n.networkPolicy, namespace: this.namespace }))
     await this.ignoreNotFound(() => this.batch.deleteNamespacedJob({ name: n.job, namespace: this.namespace }))
     await this.ignoreNotFound(() => this.core.deleteNamespacedConfigMap({ name: n.patch, namespace: this.namespace }))
+    try {
+      await this.db.deleteInstance(n.pod) // desired state is gone once stopped
+    } catch (err) {
+      this.logError(err)
+    }
   }
 
   /** No-op: per-user Pods outlive any single control-plane replica (reconcile/leader manages them). */
@@ -231,6 +257,61 @@ export class K8sSpawner implements Spawner {
     await this.ensureFilesPod(n.filesPod, userId, uid)
     await this.ensureFilesService(n.filesService, userId)
     await this.ensureFilesNetworkPolicy(n.filesNetworkPolicy, userId)
+  }
+
+  // --- reconcile / watch support (leader-only callers) ---
+
+  /** Stamp the current leader's fencing token onto resources created from now on. */
+  setFencing(fencing: Fencing | undefined): void {
+    this.fencing = fencing
+  }
+
+  /** Main DSH Pods (`app=dsh`), mapped to the shape the controller needs. */
+  async listUserPods(): Promise<LivePod[]> {
+    const res = await this.core.listNamespacedPod({ namespace: this.namespace, labelSelector: 'app=dsh' })
+    return (res.items ?? []).map((pod) => {
+      const phase = pod.status?.phase ?? ''
+      return {
+        name: pod.metadata?.name ?? '',
+        userId: pod.metadata?.labels?.user ?? '',
+        running: phase === 'Running',
+        crashed: phase === 'Failed' || phase === 'Succeeded',
+      }
+    })
+  }
+
+  /** Recreate a lost Service/NetworkPolicy for a user whose main Pod exists. */
+  async ensureUserResources(userId: string): Promise<void> {
+    await this.ensureService(names(userId).service, userId)
+    await this.ensureNetworkPolicy(names(userId).networkPolicy, userId)
+  }
+
+  /** Watch main DSH Pods; `callback` fires on add/update/delete with their state. */
+  watchMainPods(callback: (pod: LivePod) => void): k8s.Informer<k8s.V1Pod> & k8s.ObjectCache<k8s.V1Pod> {
+    const informer = k8s.makeInformer<k8s.V1Pod>(
+      this.kc,
+      `/api/v1/namespaces/${this.namespace}/pods`,
+      () => this.core.listNamespacedPod({ namespace: this.namespace, labelSelector: 'app=dsh' }),
+      'app=dsh',
+    )
+    const emit = (obj: k8s.V1Pod | undefined): void => {
+      const phase = obj?.status?.phase ?? ''
+      callback({
+        name: obj?.metadata?.name ?? '',
+        userId: obj?.metadata?.labels?.user ?? '',
+        running: phase === 'Running',
+        crashed: phase === 'Failed' || phase === 'Succeeded',
+      })
+    }
+    informer.on('add', (obj) => emit(obj))
+    informer.on('update', (obj) => emit(obj))
+    informer.on('delete', (obj) => emit(obj))
+    return informer
+  }
+
+  /** Best-effort error surface for the controller's tick loop. */
+  logError(err: unknown): void {
+    console.error('[dsh-reconcile]', err)
   }
 
   // --- helpers ---
@@ -301,10 +382,12 @@ export class K8sSpawner implements Spawner {
     // The runtime plugin (dsh-server-login/runtime) is baked into the dsh image
     // but loaded via --patch; the rendered patch is mounted at /etc/dsh/patch.yml.
     if (patchConfigMapName !== undefined) args.splice(1, 0, '--patch', '/etc/dsh/patch.yml')
+    const labels = podLabels(userId)
+    stampFencing(labels, this.fencing)
     await this.core.createNamespacedPod({ namespace: this.namespace, body: {
       apiVersion: 'v1',
       kind: 'Pod',
-      metadata: { name, namespace: this.namespace, labels: podLabels(userId) },
+      metadata: { name, namespace: this.namespace, labels },
       spec: {
         automountServiceAccountToken: false,
         hostNetwork: false,
