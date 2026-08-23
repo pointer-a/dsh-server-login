@@ -126,6 +126,14 @@ export class ReconcileController {
         if (plan.launch.includes(instance)) continue
         await this.spawner.ensureUserResources(instance.userId)
       }
+      // Idle reap (Phase 4): a desired main whose user has no active session has
+      // outlived its session TTL — stop the Pod and drop the desired row so the
+      // next tick does not relaunch it.
+      for (const instance of desired) {
+        if (await this.db.hasActiveSession(instance.userId)) continue
+        await this.spawner.stop(instance.userId)
+        await this.db.deleteInstance(instance.id)
+      }
     } catch (err) {
       // One bad tick must not kill the loop; the next tick retries.
       this.spawner.logError?.(err)

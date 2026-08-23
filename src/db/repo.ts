@@ -273,6 +273,13 @@ export function setDomainVerified(db: Database, id: string, verified: boolean): 
   return info.changes > 0
 }
 
+/** Whether any of a user's sessions is still unexpired. */
+export function hasActiveSession(db: Database, userId: string): boolean {
+  const row = prepare(db, 'SELECT 1 FROM sessions WHERE user_id = ? AND expires_at > ? LIMIT 1')
+    .get(userId, Date.now()) as { 1: number } | undefined
+  return row !== undefined
+}
+
 /** Look up a session and its user in a single join. */
 export function findSessionWithUser(db: Database, tokenHash: string): SessionUser | undefined {
   const row = prepare(

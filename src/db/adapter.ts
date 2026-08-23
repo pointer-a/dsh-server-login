@@ -41,6 +41,8 @@ export interface DbAdapter {
   deleteSession(tokenHash: string): Promise<void>
   deleteUserSessions(userId: string): Promise<void>
   findSessionWithUser(tokenHash: string): Promise<SessionUser | undefined>
+  /** Whether the user has any session that has not yet expired (idle reap). */
+  hasActiveSession(userId: string): Promise<boolean>
   // audit
   audit(actor: string | null, action: string, detail?: string | null): Promise<void>
   // workspaces / plugins

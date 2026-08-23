@@ -161,6 +161,14 @@ export class PgAdapter implements DbAdapter {
     await this.pool.query('DELETE FROM sessions WHERE user_id = $1', [userId])
   }
 
+  async hasActiveSession(userId: string): Promise<boolean> {
+    const { rows } = await this.pool.query(
+      'SELECT 1 FROM sessions WHERE user_id = $1 AND expires_at > $2 LIMIT 1',
+      [userId, Date.now()],
+    )
+    return rows.length > 0
+  }
+
   async findSessionWithUser(tokenHash: string): Promise<SessionUser | undefined> {
     const { rows } = await this.pool.query(
       `SELECT u.id, u.username, u.pass_hash, u.role, u.home_dir, u.api_key_ref, u.created_at, u.approved_by, u.uid,

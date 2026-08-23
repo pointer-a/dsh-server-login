@@ -67,6 +67,9 @@ export interface ServerConfig {
   controlPlaneImage: string
   /** imagePullSecret every generated per-user Pod/Job uses (k8s mode only). */
   imagePullSecret: string
+  /** 443 egress whitelist CIDRs for per-user DSH Pods (Phase 4 egress 收敛);
+   * empty = keep the current `0.0.0.0/0` (except private ranges). */
+  egressCidrs: string[]
   /** ServiceAccount the orchestrator runs as (k8s mode only). */
   k8sServiceAccount: string
   /** This replica's identity for leader election (POD_NAME, else hostname). */
@@ -99,6 +102,7 @@ export interface ConfigOverrides {
   dshImage?: string
   controlPlaneImage?: string
   imagePullSecret?: string
+  egressCidrs?: string[]
   k8sServiceAccount?: string
   podName?: string
 }
@@ -151,6 +155,12 @@ function resolveEncryptionSecret(dataRoot: string): string {
 function toBool(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback
   return value === 'true' || value === '1'
+}
+
+/** Split a comma-separated CIDR list into a trimmed, de-duplicated array. */
+function parseCidrs(value: string | undefined): string[] {
+  if (value === undefined || value === '') return []
+  return [...new Set(value.split(',').map((c) => c.trim()).filter((c) => c !== ''))]
 }
 
 /** Parse an isolation-mode value, rejecting anything outside `soft`/`account`
@@ -224,6 +234,7 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
       overrides.controlPlaneImage ?? process.env.DSH_SERVER_LOGIN_CONTROL_PLANE_IMAGE ?? '',
     imagePullSecret:
       overrides.imagePullSecret ?? process.env.DSH_SERVER_LOGIN_IMAGE_PULL_SECRET ?? DEFAULT_IMAGE_PULL_SECRET,
+    egressCidrs: overrides.egressCidrs ?? parseCidrs(process.env.DSH_SERVER_LOGIN_EGRESS_CIDRS),
     k8sServiceAccount:
       overrides.k8sServiceAccount ?? process.env.DSH_SERVER_LOGIN_K8S_SERVICE_ACCOUNT ?? DEFAULT_K8S_SERVICE_ACCOUNT,
     podName: overrides.podName ?? process.env.POD_NAME ?? hostname(),

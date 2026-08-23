@@ -27,6 +27,7 @@ import {
   findInstance as findInstanceSync,
   findSession as findSessionSync,
   findSessionWithUser as findSessionWithUserSync,
+  hasActiveSession as hasActiveSessionSync,
   findUserById as findUserByIdSync,
   findUserBySlug as findUserBySlugSync,
   findUserByUsername as findUserByUsernameSync,
@@ -136,6 +137,10 @@ export class SqliteAdapter implements DbAdapter {
 
   async findSessionWithUser(tokenHash: string): Promise<SessionUser | undefined> {
     return findSessionWithUserSync(this.db, tokenHash)
+  }
+
+  async hasActiveSession(userId: string): Promise<boolean> {
+    return hasActiveSessionSync(this.db, userId)
   }
 
   async audit(actor: string | null, action: string, detail?: string | null): Promise<void> {

@@ -515,7 +515,9 @@ export class K8sSpawner implements Spawner {
               ],
             },
             {
-              to: [{ ipBlock: { cidr: '0.0.0.0/0', except: ['169.254.169.254/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] } }],
+              to: this.config.egressCidrs.length > 0
+                ? this.config.egressCidrs.map((cidr) => ({ ipBlock: { cidr, except: ['169.254.169.254/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] } }))
+                : [{ ipBlock: { cidr: '0.0.0.0/0', except: ['169.254.169.254/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] } }],
               ports: [{ port: 443 }],
             },
           ],

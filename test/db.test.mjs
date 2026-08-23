@@ -175,6 +175,22 @@ function register(backend, makeAdapter) {
     }
   })
 
+  test(`${backend}: hasActiveSession reflects unexpired vs expired sessions`, async () => {
+    const db = await makeAdapter()
+    try {
+      await db.createUser(user('a', 'alice'))
+      assert.equal(await db.hasActiveSession('a'), false, 'no session → inactive')
+      await db.createSession({ tokenHash: 't1', userId: 'a', expiresAt: Date.now() + 60_000 })
+      assert.equal(await db.hasActiveSession('a'), true, 'unexpired session → active')
+      await db.createSession({ tokenHash: 't2', userId: 'a', expiresAt: Date.now() - 1000 })
+      assert.equal(await db.hasActiveSession('a'), true, 'at least one unexpired session → active')
+      await db.deleteSession('t1')
+      assert.equal(await db.hasActiveSession('a'), false, 'only expired session left → inactive')
+    } finally {
+      await db.close()
+    }
+  })
+
   test(`${backend}: instance for unknown user → ForeignKeyViolationError`, async () => {
     const db = await makeAdapter()
     try {
