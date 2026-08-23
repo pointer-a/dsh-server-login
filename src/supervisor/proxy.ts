@@ -111,35 +111,51 @@ function proxyHttp(
   rewritePrefix?: string,
 ): void {
   reply.hijack()
-  const upstream = httpRequest(
-    {
-      host: endpoint.host,
-      port: endpoint.port,
-      path: targetPath,
-      method: request.method,
-      agent: upstreamAgent,
-      // Host header stays loopback for the DSH trust fence; the TCP target host
-      // is endpoint.host above. k8s mode overrides the header port separately.
-      headers: buildUpstreamHeaders(request.headers, endpoint.port),
-    },
-    (upRes: IncomingMessage) => {
-      const headers = { ...upRes.headers }
-      const location = upRes.headers.location
-      if (
-        rewritePrefix !== undefined &&
-        typeof location === 'string' &&
-        location.startsWith('/') &&
-        !location.startsWith('//') &&
-        !location.startsWith(rewritePrefix)
-      ) {
-        headers.location = rewritePrefix + location
+  const attempt = (retry: boolean): void => {
+    const upstream = httpRequest(
+      {
+        host: endpoint.host,
+        port: endpoint.port,
+        path: targetPath,
+        method: request.method,
+        // Retry with a fresh socket (no keep-alive) so it re-resolves the
+        // Headless Service DNS; the first attempt may reuse a keep-alive socket
+        // bound to a since-rebuilt Pod IP (docs/k8s.md §5.4).
+        agent: retry ? false : upstreamAgent,
+        // Host header stays loopback for the DSH trust fence; the TCP target host
+        // is endpoint.host above. k8s mode overrides the header port separately.
+        headers: buildUpstreamHeaders(request.headers, endpoint.port),
+      },
+      (upRes: IncomingMessage) => {
+        const headers = { ...upRes.headers }
+        const location = upRes.headers.location
+        if (
+          rewritePrefix !== undefined &&
+          typeof location === 'string' &&
+          location.startsWith('/') &&
+          !location.startsWith('//') &&
+          !location.startsWith(rewritePrefix)
+        ) {
+          headers.location = rewritePrefix + location
+        }
+        reply.raw.writeHead(upRes.statusCode ?? 502, headers)
+        upRes.pipe(reply.raw)
+      },
+    )
+    upstream.on('error', () => {
+      if (retry) {
+        reply.raw.destroy()
+        return
       }
-      reply.raw.writeHead(upRes.statusCode ?? 502, headers)
-      upRes.pipe(reply.raw)
-    },
-  )
-  upstream.on('error', () => reply.raw.destroy())
-  request.raw.pipe(upstream)
+      // A stale keep-alive socket or a Pod that just restarted: drop the pool
+      // and retry once on a fresh connection.
+      upstreamAgent.destroy()
+      request.raw.unpipe(upstream)
+      attempt(true)
+    })
+    request.raw.pipe(upstream)
+  }
+  attempt(false)
 }
 
 export async function registerDshProxy(app: FastifyInstance): Promise<void> {
