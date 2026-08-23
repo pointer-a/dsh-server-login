@@ -1,0 +1,42 @@
+# 命名空间配额 + 默认资源区间（docs/k8s.md §3.6 / Phase 3「上线即配」）。
+# 防单个用户/大量用户耗尽集群。数值按 2×4C8G + 1 自动扩节点起步规模估计，
+# 上量后按 §11.1 对象数监控调。
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dsh-quota
+  namespace: dsh
+spec:
+  hard:
+    requests.cpu: "6"
+    requests.memory: "12Gi"
+    limits.cpu: "12"
+    limits.memory: "24Gi"
+    count/pods: "60"
+    count/services: "80"
+    count/networkpolicies: "120"
+    count/jobs: "40"
+    count/secrets: "120"
+    count/configmaps: "120"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dsh-limits
+  namespace: dsh
+spec:
+  limits:
+    # 默认值覆盖没有显式声明资源的 Pod；上限兜底防失控。
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "250m"
+        memory: "256Mi"
+      max:
+        cpu: "4"
+        memory: "8Gi"
+      min:
+        cpu: "10m"
+        memory: "16Mi"

@@ -1,0 +1,28 @@
+# 一次性权限提升 Job：把共享 RWX PVC 根 chmod 1777（world-writable + sticky），
+# 让后续各用户的非 root initContainer 能在根下建自己的 <userId>/ 目录
+# （docs/k8s.md §4.9 第 1 步）。initContainer 挂的是 PVC **根**，不做 subPath。
+#
+# ⚠️ 只在 namespace 打 PSA restricted **之前** apply（见 07-psa.yaml 头注释）。
+# 跑完可删，或留着（restartPolicy Never + 一次性效果，幂等）。
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: dsh-users-bootstrap
+  namespace: dsh
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: chmod-root
+          image: busybox:1.36
+          command: ["sh", "-ec", "chmod 1777 /mnt"]
+          volumeMounts:
+            - name: data-root
+              mountPath: /mnt
+      volumes:
+        - name: data-root
+          persistentVolumeClaim:
+            claimName: dsh-users

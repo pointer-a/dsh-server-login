@@ -1,0 +1,61 @@
+# 控制面 NetworkPolicy（docs/k8s.md §4.2 尾部）。若 namespace 走 default-deny
+# （Cilium/Terway DataPath V2 下可能默认放行，则本文件为显式白名单、无害）。
+# ingress：Traefik/Ingress → 3080；egress：Postgres:5432 + K8s API:443 + DNS:53
+# + 每用户 DSH sidecar:8081 + 每用户 file sidecar:8082。控制面不回调任何公网。
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dsh-orchestrator
+  namespace: dsh
+spec:
+  podSelector:
+    matchLabels:
+      app: dsh-orchestrator
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+        - namespaceSelector: {}
+      ports:
+        - port: 3080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: dsh-pg
+      ports:
+        - port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dsh
+      ports:
+        - port: 8081
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dsh-files
+      ports:
+        - port: 8082
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # K8s API server（托管的 control plane 在集群外，走公网/内网 API endpoint，
+    # 端口 6443/443）。这里放全出口 6443+443 以便访问 API server；如需更严，
+    # 按集群 API endpoint IP/CIDR 收窄。
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [169.254.169.254/32]
+      ports:
+        - port: 6443
+        - port: 443

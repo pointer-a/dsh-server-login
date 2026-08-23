@@ -1,0 +1,17 @@
+# Pod Security Admission：命名空间 enforce=restricted（docs/k8s.md 选型定案
+# §0 / Phase 3）。准入时拒绝 privileged/hostPath/hostNetwork/提权 capability。
+#
+# ⚠️ 时序（严格，docs/k8s.md §4.9）：必须在 08-bootstrap.yaml 的权限提升 Job
+# 跑完 **之后** 再 apply 本文件——先打 restricted 标签，非 root 的 bootstrap
+# Job 就写不了 PVC 根，用户目录永远建不出来。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dsh
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
