@@ -23,6 +23,7 @@ spec:
       containers:
         - name: orchestrator
           image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          imagePullPolicy: Always
           args: ["--host", "0.0.0.0"]
           env:
             - name: DSH_SERVER_LOGIN_DB_URL

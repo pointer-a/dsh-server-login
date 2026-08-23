@@ -447,125 +447,145 @@ export class K8sSpawner implements Spawner {
   }
 
   private async ensureService(name: string, userId: string): Promise<void> {
-    await this.core.createNamespacedService({ namespace: this.namespace, body: {
-      apiVersion: 'v1',
-      kind: 'Service',
-      metadata: { name, namespace: this.namespace },
-      spec: {
-        clusterIP: 'None', // Headless: no ClusterIP, DNS A record → Pod IP
-        selector: podLabels(userId),
-        ports: [{ port: 80, targetPort: SOCAT_PORT }],
-      },
-    } })
+    await this.replace({
+      read: () => this.core.readNamespacedService({ name, namespace: this.namespace }),
+      create: () => this.core.createNamespacedService({ namespace: this.namespace, body: {
+        apiVersion: 'v1',
+        kind: 'Service',
+        metadata: { name, namespace: this.namespace },
+        spec: {
+          clusterIP: 'None', // Headless: no ClusterIP, DNS A record → Pod IP
+          selector: podLabels(userId),
+          ports: [{ port: 80, targetPort: SOCAT_PORT }],
+        },
+      } }),
+      del: () => this.core.deleteNamespacedService({ name, namespace: this.namespace }),
+    })
   }
 
   private async ensureNetworkPolicy(name: string, userId: string): Promise<void> {
-    await this.networking.createNamespacedNetworkPolicy({ namespace: this.namespace, body: {
-      apiVersion: 'networking.k8s.io/v1',
-      kind: 'NetworkPolicy',
-      metadata: { name, namespace: this.namespace },
-      spec: {
-        podSelector: { matchLabels: podLabels(userId) },
-        policyTypes: ['Ingress', 'Egress'],
-        ingress: [{ _from: [{ podSelector: { matchLabels: { app: 'dsh-orchestrator' } } }] }],
-        egress: [
-          {
-            to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
-            ports: [
-              { port: 53, protocol: 'UDP' },
-              { port: 53, protocol: 'TCP' },
-            ],
-          },
-          {
-            to: [{ ipBlock: { cidr: '0.0.0.0/0', except: ['169.254.169.254/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] } }],
-            ports: [{ port: 443 }],
-          },
-        ],
-      },
-    } })
+    await this.replace({
+      read: () => this.networking.readNamespacedNetworkPolicy({ name, namespace: this.namespace }),
+      create: () => this.networking.createNamespacedNetworkPolicy({ namespace: this.namespace, body: {
+        apiVersion: 'networking.k8s.io/v1',
+        kind: 'NetworkPolicy',
+        metadata: { name, namespace: this.namespace },
+        spec: {
+          podSelector: { matchLabels: podLabels(userId) },
+          policyTypes: ['Ingress', 'Egress'],
+          ingress: [{ _from: [{ podSelector: { matchLabels: { app: 'dsh-orchestrator' } } }] }],
+          egress: [
+            {
+              to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+              ports: [
+                { port: 53, protocol: 'UDP' },
+                { port: 53, protocol: 'TCP' },
+              ],
+            },
+            {
+              to: [{ ipBlock: { cidr: '0.0.0.0/0', except: ['169.254.169.254/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] } }],
+              ports: [{ port: 443 }],
+            },
+          ],
+        },
+      } }),
+      del: () => this.networking.deleteNamespacedNetworkPolicy({ name, namespace: this.namespace }),
+    })
   }
 
   private async ensureFilesPod(name: string, userId: string, uid: number): Promise<void> {
     const mount = userPaths(userId).mount
-    await this.core.createNamespacedPod({ namespace: this.namespace, body: {
-      apiVersion: 'v1',
-      kind: 'Pod',
-      metadata: { name, namespace: this.namespace, labels: filesLabels(userId) },
-      spec: {
-        automountServiceAccountToken: false,
-        hostNetwork: false,
-        hostPID: false,
-        securityContext: {
-          runAsNonRoot: true,
-          runAsUser: uid,
-          fsGroup: uid,
-          seccompProfile: { type: 'RuntimeDefault' },
+    await this.replace({
+      read: () => this.core.readNamespacedPod({ name, namespace: this.namespace }),
+      create: () => this.core.createNamespacedPod({ namespace: this.namespace, body: {
+        apiVersion: 'v1',
+        kind: 'Pod',
+        metadata: { name, namespace: this.namespace, labels: filesLabels(userId) },
+        spec: {
+          automountServiceAccountToken: false,
+          hostNetwork: false,
+          hostPID: false,
+          securityContext: {
+            runAsNonRoot: true,
+            runAsUser: uid,
+            fsGroup: uid,
+            seccompProfile: { type: 'RuntimeDefault' },
+          },
+          // Creates `<pvc>/<userId>/{ws,home}` as the user's uid (docs/k8s.md
+          // §4.9). Runs on the PVC *root* (no subPath), because the subPath dir
+          // may not exist yet or be root-owned; the user's 0700 dir keeps other
+          // users' files out of reach.
+          initContainers: [
+            {
+              name: 'init-user',
+              image: this.config.controlPlaneImage,
+              command: ['sh', '-ec', `mkdir -p /mnt/${userId}/${WORKSPACE_DIR} /mnt/${userId}/${HOME_DIR} && chmod 0700 /mnt/${userId}`],
+              volumeMounts: [{ name: 'data-root', mountPath: '/mnt' }],
+              securityContext: containerSecurity(uid),
+            },
+          ],
+          containers: [
+            {
+              name: 'files',
+              image: this.config.controlPlaneImage,
+              args: ['file-service'],
+              env: [{ name: USER_ROOT_ENV, value: mount }],
+              ports: [{ containerPort: FILE_SERVICE_PORT }],
+              readinessProbe: { tcpSocket: { port: FILE_SERVICE_PORT }, initialDelaySeconds: 2, periodSeconds: 3 },
+              volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
+              securityContext: containerSecurity(uid),
+              resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { cpu: '100m', memory: '64Mi' } },
+            },
+          ],
+          volumes: [...dataVolume(), ...dataRootVolume()],
         },
-        // Creates `<pvc>/<userId>/{ws,home}` as the user's uid (docs/k8s.md
-        // §4.9). Runs on the PVC *root* (no subPath), because the subPath dir
-        // may not exist yet or be root-owned; the user's 0700 dir keeps other
-        // users' files out of reach.
-        initContainers: [
-          {
-            name: 'init-user',
-            image: this.config.controlPlaneImage,
-            command: ['sh', '-ec', `mkdir -p /mnt/${userId}/${WORKSPACE_DIR} /mnt/${userId}/${HOME_DIR} && chmod 0700 /mnt/${userId}`],
-            volumeMounts: [{ name: 'data-root', mountPath: '/mnt' }],
-            securityContext: containerSecurity(uid),
-          },
-        ],
-        containers: [
-          {
-            name: 'files',
-            image: this.config.controlPlaneImage,
-            args: ['file-service'],
-            env: [{ name: USER_ROOT_ENV, value: mount }],
-            ports: [{ containerPort: FILE_SERVICE_PORT }],
-            readinessProbe: { tcpSocket: { port: FILE_SERVICE_PORT }, initialDelaySeconds: 2, periodSeconds: 3 },
-            volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
-            securityContext: containerSecurity(uid),
-            resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { cpu: '100m', memory: '64Mi' } },
-          },
-        ],
-        volumes: [...dataVolume(), ...dataRootVolume()],
-      },
-    } })
+      } }),
+      del: () => this.core.deleteNamespacedPod({ name, namespace: this.namespace }),
+    })
   }
 
   private async ensureFilesService(name: string, userId: string): Promise<void> {
-    await this.core.createNamespacedService({ namespace: this.namespace, body: {
-      apiVersion: 'v1',
-      kind: 'Service',
-      metadata: { name, namespace: this.namespace },
-      spec: {
-        clusterIP: 'None',
-        selector: filesLabels(userId),
-        ports: [{ port: FILE_SERVICE_PORT, targetPort: FILE_SERVICE_PORT }],
-      },
-    } })
+    await this.replace({
+      read: () => this.core.readNamespacedService({ name, namespace: this.namespace }),
+      create: () => this.core.createNamespacedService({ namespace: this.namespace, body: {
+        apiVersion: 'v1',
+        kind: 'Service',
+        metadata: { name, namespace: this.namespace },
+        spec: {
+          clusterIP: 'None',
+          selector: filesLabels(userId),
+          ports: [{ port: FILE_SERVICE_PORT, targetPort: FILE_SERVICE_PORT }],
+        },
+      } }),
+      del: () => this.core.deleteNamespacedService({ name, namespace: this.namespace }),
+    })
   }
 
   private async ensureFilesNetworkPolicy(name: string, userId: string): Promise<void> {
-    await this.networking.createNamespacedNetworkPolicy({ namespace: this.namespace, body: {
-      apiVersion: 'networking.k8s.io/v1',
-      kind: 'NetworkPolicy',
-      metadata: { name, namespace: this.namespace },
-      spec: {
-        podSelector: { matchLabels: filesLabels(userId) },
-        policyTypes: ['Ingress', 'Egress'],
-        ingress: [{ _from: [{ podSelector: { matchLabels: { app: 'dsh-orchestrator' } } }], ports: [{ port: FILE_SERVICE_PORT }] }],
-        // Files only; the sidecar never talks to the LLM API.
-        egress: [
-          {
-            to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
-            ports: [
-              { port: 53, protocol: 'UDP' },
-              { port: 53, protocol: 'TCP' },
-            ],
-          },
-        ],
-      },
-    } })
+    await this.replace({
+      read: () => this.networking.readNamespacedNetworkPolicy({ name, namespace: this.namespace }),
+      create: () => this.networking.createNamespacedNetworkPolicy({ namespace: this.namespace, body: {
+        apiVersion: 'networking.k8s.io/v1',
+        kind: 'NetworkPolicy',
+        metadata: { name, namespace: this.namespace },
+        spec: {
+          podSelector: { matchLabels: filesLabels(userId) },
+          policyTypes: ['Ingress', 'Egress'],
+          ingress: [{ _from: [{ podSelector: { matchLabels: { app: 'dsh-orchestrator' } } }], ports: [{ port: FILE_SERVICE_PORT }] }],
+          // Files only; the sidecar never talks to the LLM API.
+          egress: [
+            {
+              to: [{ namespaceSelector: {}, podSelector: { matchLabels: { 'k8s-app': 'kube-dns' } } }],
+              ports: [
+                { port: 53, protocol: 'UDP' },
+                { port: 53, protocol: 'TCP' },
+              ],
+            },
+          ],
+        },
+      } }),
+      del: () => this.networking.deleteNamespacedNetworkPolicy({ name, namespace: this.namespace }),
+    })
   }
 
   private isNotFound(err: unknown): boolean {

@@ -42,10 +42,12 @@ function makeClients() {
       async readNamespacedConfigMap({ name }) { return configMaps.get(name) ?? (() => { throw notFound() })() },
       async createNamespacedConfigMap({ body }) { configMaps.set(body.metadata.name, body); return body },
       async deleteNamespacedConfigMap({ name }) { deletes.push(`configmap:${name}`); configMaps.delete(name) },
+      async readNamespacedService({ name }) { return services.get(name) ?? (() => { throw notFound() })() },
       async createNamespacedService({ body }) { services.set(body.metadata.name, body); return body },
       async deleteNamespacedService({ name }) { deletes.push(`service:${name}`); services.delete(name) },
     },
     networking: {
+      async readNamespacedNetworkPolicy({ name }) { return policies.get(name) ?? (() => { throw notFound() })() },
       async createNamespacedNetworkPolicy({ body }) { policies.set(body.metadata.name, body); return body },
       async deleteNamespacedNetworkPolicy({ name }) { deletes.push(`np:${name}`); policies.delete(name) },
     },
