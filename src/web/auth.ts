@@ -50,9 +50,15 @@ export function parseCookie(header: string | undefined, name: string): string | 
   return undefined
 }
 
-/** Build a `Set-Cookie` value for the session token. */
+/** Build a `Set-Cookie` value for the session token.
+ *
+ * `SameSite=None` (with `Secure`) when behind HTTPS so the cookie survives the
+ * cross-subdomain hop `dsh.<domain>` → `<user>.dsh.<domain>`; `SameSite=Lax`
+ * otherwise. The subdomain auth check still validates cookie ↔ slug, so the
+ * looser SameSite does not widen who a session can reach.
+ */
 export function sessionCookie(token: string, maxAgeSeconds: number, secure: boolean, domain?: string): string {
-  const flags = ['sid=' + token, 'HttpOnly', 'SameSite=Lax', 'Path=/', `Max-Age=${maxAgeSeconds}`]
+  const flags = ['sid=' + token, 'HttpOnly', secure ? 'SameSite=None' : 'SameSite=Lax', 'Path=/', `Max-Age=${maxAgeSeconds}`]
   if (secure) flags.push('Secure')
   if (domain !== undefined && domain !== '') flags.push(`Domain=${domain}`)
   return flags.join('; ')
@@ -60,7 +66,7 @@ export function sessionCookie(token: string, maxAgeSeconds: number, secure: bool
 
 /** Build a `Set-Cookie` value that expires the session cookie. */
 export function clearSessionCookie(secure: boolean, domain?: string): string {
-  const flags = ['sid=', 'HttpOnly', 'SameSite=Lax', 'Path=/', 'Max-Age=0']
+  const flags = ['sid=', 'HttpOnly', secure ? 'SameSite=None' : 'SameSite=Lax', 'Path=/', 'Max-Age=0']
   if (secure) flags.push('Secure')
   if (domain !== undefined && domain !== '') flags.push(`Domain=${domain}`)
   return flags.join('; ')

@@ -37,7 +37,7 @@ spec:
                   name: dsh-secret
                   key: key
             - name: DSH_SERVER_LOGIN_SECURE_COOKIES
-              value: "false"
+              value: "true"
             - name: DSH_SERVER_LOGIN_BASE_DOMAIN
               value: "dsh.xulei1112.cloud"
             - name: DSH_SERVER_LOGIN_COOKIE_DOMAIN
