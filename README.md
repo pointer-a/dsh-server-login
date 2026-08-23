@@ -16,7 +16,21 @@ DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 
 - **域名访问**：默认域名 + 每用户子路径 `/u/<userId>/dsh/`；自定义域名 + nginx 配置生成接口。
 - **硬隔离**（Linux）：每用户独立 OS 账号（`setuid` 降权），`0700` 目录真正隔离跨用户读。
 
-## 架构总览
+## 部署形态（二选一）
+
+同一套代码，靠 `DSH_SERVER_LOGIN_DEPLOY_MODE` 切换：
+
+| | 模式 A：直接部署（默认） | 模式 B：K8s + 容器化 |
+|---|---|---|
+| 形态 | 单机裸机，`child_process` + setuid/iptables | 多机 ACK，每用户独立 Pod |
+| 数据 | SQLite（本机文件） | PostgreSQL（CloudNativePG） |
+| 隔离 | 软隔离 / OS 账号硬隔离 | Pod 网络 + SecurityContext + NetworkPolicy |
+| 弹性/HA | 无（单点） | 控制面 3 副本 + leader election，DSH Pod 自动重建 |
+| 交付 | `git clone` + 脚本 | `kubectl apply -f deploy/` |
+
+模式 B 已完整落地（Phase 0–4）：每用户 DSH Pod（dsh + tcp-bridge sidecar）+ file sidecar（8082）+ Headless Service + NetworkPolicy；控制面 3 副本 + Lease 选主 + reconcile + 崩溃接管；NAS(CNFS) 共享卷 + PSA restricted + ResourceQuota。详见 [docs/k8s.md](docs/k8s.md)（定案）与 [docs/k8s-deploy.md](docs/k8s-deploy.md)（踩坑/部署流程）。
+
+## 架构总览（模式 A：单机）
 
 ```
 用户浏览器 → nginx(TLS) → 编排服务(Fastify + SQLite，单进程)
@@ -25,7 +39,7 @@ DSH 本身是单用户本地工具，没有认证、没有多租户隔离、Web 
 每用户子 DSH（主 + 按需守护）只绑回环端口，由编排服务反向代理对外。
 ```
 
-编排服务以 `child_process` 按用户 spawn DSH 子进程，端口随机分配、崩溃自动重启。完整设计见 [docs/blueprint.md](docs/blueprint.md)。
+编排服务以 `child_process` 按用户 spawn DSH 子进程，端口随机分配、崩溃自动重启。完整设计见 [docs/blueprint.md](docs/blueprint.md)。模式 B（k8s）的架构见 [docs/k8s.md](docs/k8s.md)。
 
 ## 快速开始
 
@@ -48,13 +62,17 @@ node lib/cli.js --port 3080 --db ./dev.local.db
 | `DSH_SERVER_LOGIN_ISOLATION_MODE` | `soft` | `soft` 软隔离 / `account` 账号级硬隔离（Linux，需 root） |
 | `DSH_SERVER_LOGIN_BASE_UID` | `100000` | 账号级隔离的 uid 基数 |
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `false` | HTTPS 部署设为 `true` |
+| `DSH_SERVER_LOGIN_DEPLOY_MODE` | `local` | `local` 单机 / `k8s` 每用户 Pod（模式 B） |
+| `DSH_SERVER_LOGIN_DB_URL` | 空 | Postgres DSN；设置即启用 Postgres（k8s 必填） |
 
-其余可调项（`dshCommand`、`spawnAsUserCommand`、`restartBackoffMs`、`sessionTtlSeconds`、`maxUploadBytes` 等）见 `src/config.ts` 与各文档。
+其余可调项（`dshCommand`、`spawnAsUserCommand`、`restartBackoffMs`、`sessionTtlSeconds`、`maxUploadBytes`，及 k8s 专属的 `k8sNamespace`/`dshImage`/`controlPlaneImage`/`egressCidrs` 等）见 `src/config.ts` 与各文档。
 
 ## 文档
 
 - [docs/blueprint.md](docs/blueprint.md) — 技术设计（拓扑 / 数据模型 / API / 双 DSH）
-- [docs/deployment.md](docs/deployment.md) — Linux 生产部署（账号级隔离 / nginx / systemd）
+- [docs/deployment.md](docs/deployment.md) — 模式 A：Linux 生产部署（账号级隔离 / nginx / systemd）
+- [docs/k8s.md](docs/k8s.md) — 模式 B：K8s + 容器化多机 HA（定案方案）
+- [docs/k8s-deploy.md](docs/k8s-deploy.md) — 模式 B：ACK 部署流程 + 踩坑记录
 - [docs/domain-config.md](docs/domain-config.md) — 域名与 nginx 配置示例
 - [docs/troubleshooting.md](docs/troubleshooting.md) — 常见问题排查（502 / 404 / SSL / 401 / 端口冲突）
 
