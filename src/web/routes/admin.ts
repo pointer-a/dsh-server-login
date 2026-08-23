@@ -29,6 +29,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (user.role === 'admin') return reply.code(409).send({ error: 'cannot_disable_admin' })
     await app.db.setUserRole(id, 'disabled', request.user?.id)
     await app.db.deleteUserSessions(id)
+    await app.supervisor.stop(id) // 停掉该用户运行中的 DSH（待办.md §二）
     await app.db.audit(request.user?.id ?? null, 'disable', JSON.stringify({ userId: id }))
     return { ok: true }
   })
