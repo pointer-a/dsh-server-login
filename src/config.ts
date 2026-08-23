@@ -13,6 +13,10 @@ import { join } from 'node:path'
  * `account` = per-user OS account via a setuid wrapper (Linux, needs root). */
 export type IsolationMode = 'soft' | 'account'
 
+/** Deployment mode. `local` = single-host child_process (setuid/iptables);
+ * `k8s` = multi-replica control plane spawning per-user DSH Pods via the K8s API. */
+export type DeployMode = 'local' | 'k8s'
+
 /** Resolved, immutable runtime configuration. */
 export interface ServerConfig {
   /** Bind host for the orchestrator HTTP server. */
@@ -37,9 +41,9 @@ export interface ServerConfig {
   maxUploadBytes: number
   /** Delay before auto-restarting a crashed child DSH, in milliseconds. */
   restartBackoffMs: number
-  /** Isolation tier (see {@link IsolationMode}). */
+  /** Isolation tier (see {@link IsolationMode}); local mode only. */
   isolationMode: IsolationMode
-  /** Argv prefix that drops privileges; `{UID}`/`{GID}` are substituted. */
+  /** Argv prefix that drops privileges; `{UID}`/`{GID}` are substituted. Local mode only. */
   spawnAsUserCommand: string[]
   /** Base uid for the deterministic per-user uid. */
   baseUid: number
@@ -49,10 +53,18 @@ export interface ServerConfig {
   cookieDomain: string
   /** Whether to pass `--patch` to child DSHs (needs a dsh CLI that supports it). */
   enablePatch: boolean
-  /** Enable the loopback OUTPUT owner-match port guard (Linux + root). */
+  /** Enable the loopback OUTPUT owner-match port guard (Linux + root). Local mode only. */
   portGuard: boolean
   /** Secret used to encrypt per-user secrets at rest (from env or dataRoot/secret.key). */
   encryptionSecret: string
+  /** Deployment mode (see {@link DeployMode}). */
+  deployMode: DeployMode
+  /** K8s namespace for per-user DSH resources (k8s mode only). */
+  k8sNamespace: string
+  /** Image for per-user DSH Pods (k8s mode only). */
+  dshImage: string
+  /** ServiceAccount the orchestrator runs as (k8s mode only). */
+  k8sServiceAccount: string
 }
 
 /** Untyped overrides collected from argv / env. */
@@ -76,6 +88,10 @@ export interface ConfigOverrides {
   enablePatch?: boolean
   portGuard?: boolean
   encryptionSecret?: string
+  deployMode?: DeployMode | string
+  k8sNamespace?: string
+  dshImage?: string
+  k8sServiceAccount?: string
 }
 
 const DEFAULT_HOST = '127.0.0.1'
@@ -100,6 +116,9 @@ const DEFAULT_BASE_UID = 100000
 const DEFAULT_BASE_DOMAIN = ''
 const DEFAULT_COOKIE_DOMAIN = ''
 const DEFAULT_ENABLE_PATCH = false
+const DEFAULT_DEPLOY_MODE: DeployMode = 'local'
+const DEFAULT_K8S_NAMESPACE = 'dsh'
+const DEFAULT_K8S_SERVICE_ACCOUNT = 'dsh-orchestrator'
 
 /** Load the encryption secret from env, or persist a generated one at
  * `<dataRoot>/secret.key` (0600) so it survives restarts without setup. */
@@ -134,6 +153,14 @@ function toIsolationMode(value: string | undefined): IsolationMode | undefined {
   throw new Error(`invalid isolation mode "${value}" (expected "soft" or "account")`)
 }
 
+/** Parse a deploy-mode value, rejecting anything outside `local`/`k8s`. */
+function toDeployMode(value: string | undefined): DeployMode | undefined {
+  if (value === undefined) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'local' || normalized === 'k8s') return normalized
+  throw new Error(`invalid deploy mode "${value}" (expected "local" or "k8s")`)
+}
+
 /**
  * Fold argv/env overrides over defaults. `dataRoot` defaults to
  * `~/.dsh-server-login` (always writable for dev); production sets
@@ -148,6 +175,10 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     toIsolationMode(overrides.isolationMode) ??
     toIsolationMode(process.env.DSH_SERVER_LOGIN_ISOLATION_MODE) ??
     DEFAULT_ISOLATION_MODE
+  const deployMode =
+    toDeployMode(overrides.deployMode) ??
+    toDeployMode(process.env.DSH_SERVER_LOGIN_DEPLOY_MODE) ??
+    DEFAULT_DEPLOY_MODE
   return {
     host: overrides.host ?? DEFAULT_HOST,
     port: typeof port === 'number' ? port : Number(port),
@@ -176,5 +207,10 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     portGuard: overrides.portGuard ?? toBool(process.env.DSH_SERVER_LOGIN_PORT_GUARD, false),
     encryptionSecret:
       overrides.encryptionSecret ?? resolveEncryptionSecret(dataRoot),
+    deployMode,
+    k8sNamespace: overrides.k8sNamespace ?? process.env.DSH_SERVER_LOGIN_NAMESPACE ?? DEFAULT_K8S_NAMESPACE,
+    dshImage: overrides.dshImage ?? process.env.DSH_SERVER_LOGIN_DSH_IMAGE ?? '',
+    k8sServiceAccount:
+      overrides.k8sServiceAccount ?? process.env.DSH_SERVER_LOGIN_K8S_SERVICE_ACCOUNT ?? DEFAULT_K8S_SERVICE_ACCOUNT,
   }
 }
