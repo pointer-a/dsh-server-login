@@ -167,7 +167,11 @@ async function runFileService(): Promise<void> {
     console.error(`file-service requires ${USER_ROOT_ENV} (the user's data root inside the Pod)`)
     process.exit(2)
   }
-  const config = resolveConfig({})
+  // The sidecar runs as the user's uid with no home dir; `homedir()` falls back
+  // to `/` and `resolveConfig` would try to mkdir `/.dsh-server-login`. It only
+  // needs `maxUploadBytes`/`logLevel` here, so pin dataRoot to a writable path
+  // and skip the (unused) encryption-secret file.
+  const config = resolveConfig({ dataRoot: '/tmp', encryptionSecret: 'file-service-unused' })
   const app = buildFileService(root, { bodyLimit: config.maxUploadBytes, logLevel: config.logLevel })
   await app.listen({ host: '0.0.0.0', port: FILE_SERVICE_PORT })
   app.log.info(`file sidecar serving ${root} on 0.0.0.0:${FILE_SERVICE_PORT}`)
