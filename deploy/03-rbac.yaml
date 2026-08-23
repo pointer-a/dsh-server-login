@@ -1,0 +1,41 @@
+# 控制面 ServiceAccount + RBAC（docs/k8s.md §5.3）：dsh-orchestrator 在 dsh
+# 命名空间里建/删每用户 Pod/Service/NetworkPolicy/Secret/Job/PVC，读事件，
+# lease 供 leader election。
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dsh-orchestrator
+  namespace: dsh
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dsh-orchestrator
+  namespace: dsh
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "secrets", "persistentvolumeclaims", "configmaps", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dsh-orchestrator
+  namespace: dsh
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dsh-orchestrator
+subjects:
+  - kind: ServiceAccount
+    name: dsh-orchestrator
+    namespace: dsh

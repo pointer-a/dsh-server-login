@@ -9,6 +9,7 @@
  */
 
 import * as k8s from '@kubernetes/client-node'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ServerConfig } from '../config.js'
 import { AlreadyRunningError, type Endpoint, type Instance, type Spawner, type UserStatus } from './spawner.js'
@@ -23,13 +24,14 @@ const WATCHDOG_TASK = 'Read DSH_SERVER_LOGIN_HANDOFF_PATH. If it contains a JSON
 const USERS_PVC = 'dsh-users'
 
 /** Per-user resource names (deterministic — idempotent create). */
-function names(userId: string): { pod: string; service: string; networkPolicy: string; secret: string; job: string } {
+function names(userId: string): { pod: string; service: string; networkPolicy: string; secret: string; job: string; patch: string } {
   return {
     pod: `dsh-${userId}`,
     service: `dsh-${userId}`,
     networkPolicy: `dsh-${userId}`,
     secret: `dsh-key-${userId}`,
     job: `dsh-${userId}-watchdog`,
+    patch: `dsh-${userId}-patch`,
   }
 }
 
@@ -94,8 +96,10 @@ export class K8sSpawner implements Spawner {
     if (await this.podExists(n.pod)) throw new AlreadyRunningError(userId)
     const apiKey = await this.resolveApiKey(userId)
     const uid = await this.resolveUid(userId)
+    const hasPatch = this.config.enablePatch && patchPath !== undefined
+    if (hasPatch) await this.ensurePatchConfigMap(n.patch, patchPath)
     await this.ensureSecret(n.secret, apiKey)
-    await this.ensurePod(n.pod, userId, uid, apiKey, patchPath)
+    await this.ensurePod(n.pod, userId, uid, apiKey, hasPatch ? n.patch : undefined)
     await this.ensureService(n.service, userId)
     await this.ensureNetworkPolicy(n.networkPolicy, userId)
     return { id: n.pod, userId, role: 'main', folder, status: 'starting', patchPath }
@@ -210,15 +214,12 @@ export class K8sSpawner implements Spawner {
     } })
   }
 
-  private async ensurePod(name: string, userId: string, uid: number, apiKey: string | null, patchPath?: string): Promise<void> {
+  private async ensurePod(name: string, userId: string, uid: number, apiKey: string | null, patchConfigMapName?: string): Promise<void> {
     const { home, ws, mount } = userPaths(userId)
     const args = ['--profile', 'web', '--host', '127.0.0.1', '--port', String(DSH_LOOPBACK_PORT)]
-    // TODO(k8s): render the patch into a ConfigMap + mount, then pass --patch here.
     // The runtime plugin (dsh-server-login/runtime) is baked into the dsh image
-    // but must be loaded via --patch; defer until the patch injection path is settled.
-    if (this.config.enablePatch && patchPath !== undefined) {
-      args.splice(1, 0, '--patch', patchPath)
-    }
+    // but loaded via --patch; the rendered patch is mounted at /etc/dsh/patch.yml.
+    if (patchConfigMapName !== undefined) args.splice(1, 0, '--patch', '/etc/dsh/patch.yml')
     await this.core.createNamespacedPod({ namespace: this.namespace, body: {
       apiVersion: 'v1',
       kind: 'Pod',
@@ -244,7 +245,10 @@ export class K8sSpawner implements Spawner {
               { name: 'DSH_HOME', value: home },
               ...apiKeyEnv(this.namespace, userId, apiKey),
             ],
-            volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
+            volumeMounts: [
+              { name: 'data', mountPath: mount, subPath: userId },
+              ...(patchConfigMapName !== undefined ? [{ name: 'patch', mountPath: '/etc/dsh', readOnly: true }] : []),
+            ],
             securityContext: containerSecurity(uid),
             resources: { requests: { cpu: '500m', memory: '1Gi' }, limits: { cpu: '2', memory: '4Gi' } },
           },
@@ -257,8 +261,21 @@ export class K8sSpawner implements Spawner {
             resources: { requests: { cpu: '10m', memory: '16Mi' }, limits: { cpu: '100m', memory: '64Mi' } },
           },
         ],
-        volumes: dataVolume(),
+        volumes: [
+          ...dataVolume(),
+          ...(patchConfigMapName !== undefined ? [{ name: 'patch', configMap: { name: patchConfigMapName } }] : []),
+        ],
       },
+    } })
+  }
+
+  private async ensurePatchConfigMap(name: string, patchPath: string): Promise<void> {
+    const content = readFileSync(patchPath, 'utf8')
+    await this.core.createNamespacedConfigMap({ namespace: this.namespace, body: {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: { name, namespace: this.namespace },
+      data: { 'patch.yml': content },
     } })
   }
 

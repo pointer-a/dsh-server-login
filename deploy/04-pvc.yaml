@@ -1,0 +1,14 @@
+# 每用户 DSH 共享的 RWX 卷（docs/k8s.md §4.3/§4.7）。ACK 上 RWX 用阿里云 NAS
+# （需先有 alicloud-nas StorageClass + NAS 文件系统；单机测试阶段可先不建，
+# K8sSpawner 的 Pod 会因挂不上卷而 Pending，但生命周期逻辑可验）。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dsh-users
+  namespace: dsh
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: alicloud-nas
