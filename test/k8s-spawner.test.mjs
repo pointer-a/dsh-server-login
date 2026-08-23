@@ -95,12 +95,14 @@ test('k8s: launch creates DSH Pod/Service/NP and calls ensureFileService first',
   await assert.rejects(() => s.launch('u1', '/ws/proj'), AlreadyRunningError)
 })
 
-test('k8s: endpointFor returns the headless Service only for a Running Pod', async () => {
+test('k8s: endpointFor returns the Pod IP (not Service DNS) for a Running Pod', async () => {
   const clients = makeClients()
   const s = spawner(clients)
   assert.equal(await s.endpointFor('u1'), undefined, 'absent Pod → undefined')
-  clients.pods.set('dsh-u1', { status: { phase: 'Running' } })
-  assert.deepEqual(await s.endpointFor('u1'), { host: 'dsh-u1.dsh.svc.cluster.local', port: 8081 })
+  clients.pods.set('dsh-u1', { status: { phase: 'Running', podIP: '10.42.0.7' } })
+  assert.deepEqual(await s.endpointFor('u1'), { host: '10.42.0.7', port: 8081 })
+  clients.pods.set('dsh-u1', { status: { phase: 'Pending' } })
+  assert.equal(await s.endpointFor('u1'), undefined, 'non-Running Pod → undefined')
 })
 
 test('k8s: stop deletes every generated object (Pod/Service/NP/Job/ConfigMap)', async () => {

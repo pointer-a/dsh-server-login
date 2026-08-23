@@ -243,9 +243,13 @@ export class K8sSpawner implements Spawner {
       throw err // 403/500 are real failures, not "not running"
     }
     if (pod.status?.phase !== 'Running') return undefined
-    // Headless Service (clusterIP: None) has no kube-proxy DNAT, so the proxy
-    // must dial the Pod's *target* port (the sidecar's 8081), not the Service port 80.
-    return { host: `${names(userId).service}.${this.namespace}.svc.cluster.local`, port: SOCAT_PORT }
+    // Dial the Pod IP directly (not the Headless Service DNS): re-reading the Pod
+    // on every request gives the *current* IP immediately after a restart, so a
+    // rebuilt Pod never leaves the proxy pointing at a stale IP for the ~30s DNS
+    // TTL. Port is the sidecar's 8081 (no kube-proxy DNAT on Headless Services).
+    const ip = pod.status?.podIP
+    if (ip === undefined || ip === '') return undefined
+    return { host: ip, port: SOCAT_PORT }
   }
 
   async stop(userId: string): Promise<void> {
