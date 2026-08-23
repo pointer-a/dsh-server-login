@@ -66,4 +66,7 @@ export interface Spawner {
   endpointFor(userId: string): Promise<Endpoint | undefined>
   stop(userId: string): Promise<void>
   teardown(): Promise<void>
+  /** Make the user's file sidecar exist and be ready (k8s). No-op under local,
+   * where the control plane touches the volume in-process. */
+  ensureFileService(userId: string): Promise<void>
 }

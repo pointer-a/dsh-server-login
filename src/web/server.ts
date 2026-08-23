@@ -65,6 +65,7 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
     config.deployMode === 'k8s'
       ? new K8sSpawner(config, resolveApiKey, resolveUid)
       : new LocalSpawner(config, resolveApiKey, resolveUid)
+  const userFs = createUserFs(config, (userId) => supervisor.ensureFileService(userId))
 
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -75,7 +76,7 @@ export async function buildServer(config: ServerConfig): Promise<FastifyInstance
   app.decorate('db', db)
   app.decorate('config', config)
   app.decorate('supervisor', supervisor)
-  app.decorate('userFs', createUserFs(config))
+  app.decorate('userFs', userFs)
   app.decorateRequest('user', null)
 
   // Reverse proxy (subdomain + legacy subpath). Registered first so its global

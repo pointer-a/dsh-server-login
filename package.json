@@ -27,6 +27,7 @@
     "smoke:admin": "node scripts/smoke-admin.mjs",
     "smoke:auth": "node scripts/smoke-auth.mjs",
     "smoke:fs": "node scripts/smoke-fs.mjs",
+    "smoke:file-service": "node scripts/smoke-file-service.mjs",
     "smoke:dsh": "node scripts/smoke-dsh.mjs",
     "smoke:plugins": "node scripts/smoke-plugins.mjs",
     "smoke:watchdog": "node scripts/smoke-watchdog.mjs",

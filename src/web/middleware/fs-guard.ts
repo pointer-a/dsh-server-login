@@ -7,7 +7,21 @@
  * @module dsh-server-login/web/middleware/fs-guard
  */
 
-import { basename, isAbsolute, resolve, sep } from 'node:path'
+import { basename, isAbsolute, posix, resolve, sep } from 'node:path'
+
+/** The subset of `node:path` the guard needs, so a caller can pin POSIX
+ * semantics for paths that belong to a *remote* filesystem (a Linux Pod)
+ * rather than the host the control plane happens to run on. */
+export interface PathFlavor {
+  isAbsolute(path: string): boolean
+  resolve(...paths: string[]): string
+  readonly sep: string
+}
+
+const NATIVE: PathFlavor = { isAbsolute, resolve, sep }
+
+/** POSIX flavor, for in-Pod paths built by the k8s backend. */
+export const POSIX: PathFlavor = { isAbsolute: posix.isAbsolute, resolve: posix.resolve, sep: posix.sep }
 
 /** Sentinel error for a path that escapes its allowed root. */
 export class PathEscapeError extends Error {
@@ -22,8 +36,11 @@ export class PathEscapeError extends Error {
  * result that escapes the root (including `..` traversal).
  * @param root - the user's workspace root (absolute).
  * @param rel - a user-supplied relative path (`''` resolves to `root`).
+ * @param flavor - path semantics; defaults to the host's. Pass {@link POSIX}
+ * when `root` names a directory inside a Linux Pod, not on this host.
  */
-export function resolveWithinRoot(root: string, rel: string): string {
+export function resolveWithinRoot(root: string, rel: string, flavor: PathFlavor = NATIVE): string {
+  const { isAbsolute, resolve, sep } = flavor
   if (isAbsolute(rel)) throw new PathEscapeError(rel, root)
   if (rel.includes('\0')) throw new PathEscapeError('<nul>', root)
   const resolved = resolve(root, rel)

@@ -186,6 +186,10 @@ export class K8sSpawner implements Spawner {
   /** No-op: per-user Pods outlive any single control-plane replica (reconcile/leader manages them). */
   async teardown(): Promise<void> {}
 
+  /** Bring up the user's file sidecar (docs/k8s.md §4.10). Implemented in the
+   * next stage; declared here so the {@link Spawner} seam is complete. */
+  async ensureFileService(_userId: string): Promise<void> {}
+
   // --- helpers ---
 
   private async podExists(name: string): Promise<boolean> {

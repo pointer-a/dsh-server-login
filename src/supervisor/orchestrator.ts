@@ -111,6 +111,9 @@ export class LocalSpawner implements Spawner {
     for (const userId of [...this.mains.keys(), ...this.watchdogs.keys()]) await this.stop(userId)
   }
 
+  /** No-op: local mode has no sidecar — the control plane owns the volume. */
+  async ensureFileService(_userId: string): Promise<void> {}
+
   private handoffPath(userId: string): string {
     return handoffPath(userRoot(this.config.dataRoot, userId))
   }

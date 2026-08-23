@@ -4,6 +4,7 @@
  *
  * Subcommands:
  *   dsh-server-login bootstrap-admin --username <u> --password <p>
+ *   dsh-server-login file-service                   per-user file sidecar (k8s)
  *   dsh-server-login [server flags]
  * @module dsh-server-login/cli
  */
@@ -16,6 +17,7 @@ import { createUserFs } from './fs/provider.js'
 import { homeRoot, userRoot } from './fs/workspace.js'
 import { hashPassword } from './web/auth.js'
 import { hashUid } from './isolation.js'
+import { buildFileService, FILE_SERVICE_PORT, USER_ROOT_ENV } from './web/file-service.js'
 import { buildServer } from './web/server.js'
 
 const HELP = `dsh-server-login — DSH server login orchestrator
@@ -23,6 +25,7 @@ const HELP = `dsh-server-login — DSH server login orchestrator
 Usage:
   dsh-server-login [options]                      start the server
   dsh-server-login bootstrap-admin [options]      create the first admin
+  dsh-server-login file-service                   run the per-user file sidecar
 
 Server options:
   --port <n>        Bind port (0 = ephemeral). Default 3080.
@@ -138,6 +141,31 @@ async function runServer(args: string[]): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
+/**
+ * Run the per-user file sidecar. Serves one user's volume over HTTP on 8082 so
+ * the control plane (which holds no users volume under k8s) can reach it; the
+ * root comes from the Pod's env, not from argv.
+ */
+async function runFileService(): Promise<void> {
+  const root = process.env[USER_ROOT_ENV]
+  if (root === undefined || root === '') {
+    console.error(`file-service requires ${USER_ROOT_ENV} (the user's data root inside the Pod)`)
+    process.exit(2)
+  }
+  const config = resolveConfig({})
+  const app = buildFileService(root, { bodyLimit: config.maxUploadBytes, logLevel: config.logLevel })
+  await app.listen({ host: '0.0.0.0', port: FILE_SERVICE_PORT })
+  app.log.info(`file sidecar serving ${root} on 0.0.0.0:${FILE_SERVICE_PORT}`)
+
+  const shutdown = async (signal: string): Promise<void> => {
+    app.log.info(`received ${signal}, shutting down`)
+    await app.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', () => void shutdown('SIGINT'))
+  process.on('SIGTERM', () => void shutdown('SIGTERM'))
+}
+
 async function uidForUserCmd(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
@@ -166,6 +194,10 @@ async function main(): Promise<void> {
   }
   if (first === 'uid-for-user') {
     await uidForUserCmd(rest)
+    return
+  }
+  if (first === 'file-service') {
+    await runFileService()
     return
   }
   await runServer(process.argv.slice(2))
