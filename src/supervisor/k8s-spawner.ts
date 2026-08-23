@@ -430,11 +430,11 @@ export class K8sSpawner implements Spawner {
           },
           {
             name: 'sidecar',
-            image: 'alpine/socat:1.8.0.0',
-            args: [`TCP-LISTEN:${SOCAT_PORT},fork,reuseaddr`, `TCP:127.0.0.1:${DSH_LOOPBACK_PORT}`],
+            image: this.config.controlPlaneImage,
+            args: ['tcp-bridge', `0.0.0.0:${SOCAT_PORT}`, `127.0.0.1:${DSH_LOOPBACK_PORT}`],
             ports: [{ containerPort: SOCAT_PORT }],
             securityContext: containerSecurity(uid),
-            resources: { requests: { cpu: '10m', memory: '16Mi' }, limits: { cpu: '100m', memory: '64Mi' } },
+            resources: { requests: { cpu: '10m', memory: '32Mi' }, limits: { cpu: '100m', memory: '128Mi' } },
           },
         ],
         volumes: [

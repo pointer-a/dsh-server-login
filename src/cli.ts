@@ -21,6 +21,7 @@ import { LeaderElector } from './supervisor/leader.js'
 import { ReconcileController } from './supervisor/reconcile.js'
 import { K8sSpawner } from './supervisor/k8s-spawner.js'
 import { buildFileService, FILE_SERVICE_PORT, USER_ROOT_ENV } from './web/file-service.js'
+import { startTcpBridge } from './tcp-bridge.js'
 import { buildServer } from './web/server.js'
 
 const HELP = `dsh-server-login — DSH server login orchestrator
@@ -185,6 +186,22 @@ async function runFileService(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
+/** TCP bridge sidecar (`dsh-server-login tcp-bridge <listen> <target>`). */
+async function runTcpBridge(args: string[]): Promise<void> {
+  const [listen, target] = args
+  if (listen === undefined || target === undefined) {
+    console.error('usage: dsh-server-login tcp-bridge <listen> <target>')
+    process.exit(2)
+  }
+  const server = await startTcpBridge(listen, target)
+  console.error(`tcp-bridge ${listen} -> ${target}`)
+  const shutdown = (): void => {
+    server.close(() => process.exit(0))
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
+}
+
 async function uidForUserCmd(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
@@ -217,6 +234,10 @@ async function main(): Promise<void> {
   }
   if (first === 'file-service') {
     await runFileService()
+    return
+  }
+  if (first === 'tcp-bridge') {
+    await runTcpBridge(rest)
     return
   }
   await runServer(process.argv.slice(2))
