@@ -90,6 +90,13 @@ function dataRootVolume(): k8s.V1Volume[] {
   return [{ name: 'data-root', persistentVolumeClaim: { claimName: USERS_PVC } }]
 }
 
+/** Every per-user Pod/Job references ACR private images, so each must carry the
+ * cluster's pull secret (the control-plane Deployment has it in its manifest,
+ * but generated Pods don't inherit it). */
+function pullSecrets(name: string): k8s.V1LocalObjectReference[] {
+  return name === '' ? [] : [{ name }]
+}
+
 /** Fencing labels stamped onto resources created by the leader, so a successor
  * can identify work a dead leader left in flight (docs/k8s.md §5.3). */
 function stampFencing(labels: Record<string, string>, fencing: Fencing | undefined): void {
@@ -181,6 +188,7 @@ export class K8sSpawner implements Spawner {
           metadata: { labels: podTemplateLabels },
           spec: {
             automountServiceAccountToken: false,
+            imagePullSecrets: pullSecrets(this.config.imagePullSecret),
             restartPolicy: 'Never',
             securityContext: {
               runAsNonRoot: true,
@@ -390,6 +398,7 @@ export class K8sSpawner implements Spawner {
       metadata: { name, namespace: this.namespace, labels },
       spec: {
         automountServiceAccountToken: false,
+        imagePullSecrets: pullSecrets(this.config.imagePullSecret),
         hostNetwork: false,
         hostPID: false,
         securityContext: {
@@ -503,6 +512,7 @@ export class K8sSpawner implements Spawner {
         metadata: { name, namespace: this.namespace, labels: filesLabels(userId) },
         spec: {
           automountServiceAccountToken: false,
+          imagePullSecrets: pullSecrets(this.config.imagePullSecret),
           hostNetwork: false,
           hostPID: false,
           securityContext: {

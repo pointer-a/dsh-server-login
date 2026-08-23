@@ -1,0 +1,41 @@
+# 给每个节点下发 NFS 客户端 sunrpc 调优参数（用户提供的腾讯云侧经验值）：
+#   options sunrpc tcp_slot_table_entries=128
+#   options sunrpc tcp_max_slot_table_entries=128
+# 写到 /etc/modprobe.d/sunrpc.conf，节点下次加载 sunrpc 模块时生效（持久）。
+# 高并发 NFS 下可避免 "RPC: task blocked"。放在 kube-system，跑完可删。
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sunrpc-tuning
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: sunrpc-tuning
+  template:
+    metadata:
+      labels:
+        app: sunrpc-tuning
+    spec:
+      hostPID: false
+      containers:
+        - name: write
+          image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          command:
+            - sh
+            - -ec
+            - |
+              mkdir -p /host/etc/modprobe.d
+              printf 'options sunrpc tcp_slot_table_entries=128\noptions sunrpc tcp_max_slot_table_entries=128\n' > /host/etc/modprobe.d/sunrpc.conf
+              echo "wrote sunrpc.conf:"; cat /host/etc/modprobe.d/sunrpc.conf
+              sleep infinity
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: modprobe
+              mountPath: /host/etc/modprobe.d
+      volumes:
+        - name: modprobe
+          hostPath:
+            path: /etc/modprobe.d
+            type: DirectoryOrCreate

@@ -4,6 +4,8 @@
 #
 # ⚠️ 只在 namespace 打 PSA restricted **之前** apply（见 07-psa.yaml 头注释）。
 # 跑完可删，或留着（restartPolicy Never + 一次性效果，幂等）。
+#
+# 用控制面镜像（node:22-slim，已推 ACR）而非 busybox：集群拉不动 docker.io。
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -15,10 +17,17 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: dsh-acr-pull
       containers:
         - name: chmod-root
-          image: busybox:1.36
-          command: ["sh", "-ec", "chmod 1777 /mnt"]
+          image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          command: ["sh", "-c", "chmod 1777 /mnt"]
+          securityContext:
+            runAsUser: 0   # 需 root 才能 chmod；本 Job 跑在 PSA restricted 之前
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: data-root
               mountPath: /mnt

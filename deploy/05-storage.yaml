@@ -1,21 +1,16 @@
-# 阿里云 NAS StorageClass（ACK）。每用户 DSH 共享的 RWX 卷走 NAS（deploy/04-pvc.yaml
-# 引用 alicloud-nas）。部署前需先创建 NAS 文件系统，并把其挂载目标地址填进
-# `server`（形如 `xxxx.cn-shanghai.nas.aliyuncs.com`），SubDir 由 provisioner
-# 动态建子目录。
-# 见 docs/k8s-deploy.md §5.5：ACK 上 Longhorn 被 NAS 取代。
+# 阿里云 NAS StorageClass（ACK + CNFS）。每用户 DSH 共享的 RWX 卷走 NAS
+# （deploy/04-pvc.yaml 引用 alicloud-nas）。通过 CNFS CR（storage.alibabacloud.com/v1beta1
+# ContainerNetworkFileSystem，控制台「容器网络文件系统」创建，名为 `nas`）引用
+# 已就绪的 NAS 文件系统，provisioner 自动在 `/` 下为每个 PVC 建独立子目录。
+# 见 docs/k8s-deploy.md §5.5：ACK 上 Longhorn 被 NAS/CNFS 取代。
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: alicloud-nas
 provisioner: nasplugin.csi.alibabacloud.com
-reclaimPolicy: Retain
+reclaimPolicy: Delete
 parameters:
   volumeAs: subpath
-  server: "CHANGEME.cn-shanghai.nas.aliyuncs.com:/"
+  containerNetworkFileSystem: nas
   path: "/"
-  vers: "3"
-  options: "nolock,tcp,noresvport"
-mountOptions:
-  - nolock
-  - tcp
-  - noresvport
+  archiveOnDelete: "false"

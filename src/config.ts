@@ -65,6 +65,8 @@ export interface ServerConfig {
   dshImage: string
   /** Image for the per-user file sidecar (k8s mode only; shares the control-plane image). */
   controlPlaneImage: string
+  /** imagePullSecret every generated per-user Pod/Job uses (k8s mode only). */
+  imagePullSecret: string
   /** ServiceAccount the orchestrator runs as (k8s mode only). */
   k8sServiceAccount: string
   /** This replica's identity for leader election (POD_NAME, else hostname). */
@@ -96,6 +98,7 @@ export interface ConfigOverrides {
   k8sNamespace?: string
   dshImage?: string
   controlPlaneImage?: string
+  imagePullSecret?: string
   k8sServiceAccount?: string
   podName?: string
 }
@@ -125,6 +128,7 @@ const DEFAULT_ENABLE_PATCH = false
 const DEFAULT_DEPLOY_MODE: DeployMode = 'local'
 const DEFAULT_K8S_NAMESPACE = 'dsh'
 const DEFAULT_K8S_SERVICE_ACCOUNT = 'dsh-orchestrator'
+const DEFAULT_IMAGE_PULL_SECRET = 'dsh-acr-pull'
 
 /** Load the encryption secret from env, or persist a generated one at
  * `<dataRoot>/secret.key` (0600) so it survives restarts without setup. */
@@ -218,6 +222,8 @@ export function resolveConfig(overrides: ConfigOverrides = {}): ServerConfig {
     dshImage: overrides.dshImage ?? process.env.DSH_SERVER_LOGIN_DSH_IMAGE ?? '',
     controlPlaneImage:
       overrides.controlPlaneImage ?? process.env.DSH_SERVER_LOGIN_CONTROL_PLANE_IMAGE ?? '',
+    imagePullSecret:
+      overrides.imagePullSecret ?? process.env.DSH_SERVER_LOGIN_IMAGE_PULL_SECRET ?? DEFAULT_IMAGE_PULL_SECRET,
     k8sServiceAccount:
       overrides.k8sServiceAccount ?? process.env.DSH_SERVER_LOGIN_K8S_SERVICE_ACCOUNT ?? DEFAULT_K8S_SERVICE_ACCOUNT,
     podName: overrides.podName ?? process.env.POD_NAME ?? hostname(),
