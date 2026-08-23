@@ -93,7 +93,7 @@ jobs:
           docker stop dsh-smoke
 
       - name: Trivy — control plane
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dsh-server-login:ci
           severity: HIGH,CRITICAL
@@ -102,7 +102,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Trivy — dsh
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dsh:ci
           severity: HIGH,CRITICAL
