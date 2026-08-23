@@ -20,7 +20,7 @@ spec:
       hostPID: false
       containers:
         - name: write
-          image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          image: registry.example.com/dsh/dsh-server-login:0.2.0
           command:
             - sh
             - -ec

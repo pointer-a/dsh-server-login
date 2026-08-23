@@ -12,8 +12,8 @@
 
 - 一个 **ACK 智能托管集群**（网络插件 DataPath V2 / 勾选 NetworkPolicy；节点 ≥ 3 或启用自动扩容）。
 - 一个 **NAS 文件系统**，并在集群里建 **CNFS**（控制台「容器网络文件系统」，名字记为 `nas`）。
-- 一个 **私有 ACR 仓库**（本文用 `crpi-...cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a`）。
-- 一个域名（本文用 `dsh.example.com`，实际 `dsh.xulei1112.cloud`）+ 通配证书入口机（nginx / SLB）。
+- 一个 **私有 ACR 仓库**（本文用 `registry.example.com/dsh` 作占位）。
+- 一个域名（本文用 `dsh.example.com` 作占位）+ 通配证书入口机（nginx / SLB）。
 
 已安装：`kubectl`、`cnpg` operator（`kubectl apply --server-side -f cnpg.yaml`）。
 
@@ -57,7 +57,7 @@ kubectl -n dsh get secret dsh-pg-app -o jsonpath='{.data.uri}' | base64 -d
 ```sh
 # ① ACR 拉镜像凭证（生成 Pod 拉私有镜像用）
 kubectl -n dsh create secret docker-registry dsh-acr-pull \
-  --docker-server=crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com \
+  --docker-server=registry.example.com \
   --docker-username='<ACR_USERNAME>' --docker-password='<ACR_PASSWORD>'
 
 # ② 共享加密密钥（迁移时填旧 dataRoot/secret.key 内容，否则已加密的 API key 解不开）

@@ -261,10 +261,10 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
 ### 7.2 NAS：用 CNFS，别手写 `server` 参数
 
 - 手写 `alicloud-nas` StorageClass 的 `server` 必须是**挂载目标域 + `:/`**，且
-  **不含 FileSystemId 前缀**。我给错成 `ap-24w40hkvbc.030l...cn-shanghai.nas.aliyuncs.com`
-  （带 FSID 前缀）→ provisioner 报 `CreateDir: IllegalCharacters`；去掉 `ap-24w40hkvbc.`
+  **不含 FileSystemId 前缀**。我给错成 `<FSID>.<NAS_MOUNT_TARGET>`
+  （带 FSID 前缀）→ provisioner 报 `CreateDir: IllegalCharacters`；去掉 FSID 前缀
   后 PVC 才 Bound。
-- 但挂载目标还会变（`-wkc31` → `-tjn95`），正确姿势是控制台建 **CNFS**
+- 但挂载目标还会变（重建 NAS 后后缀漂移），正确姿势是控制台建 **CNFS**
   （`storage.alibabacloud.com/v1beta1 ContainerNetworkFileSystem`），StorageClass 用
   `containerNetworkFileSystem: nas` 参数引用，provisioner 自动拿到当前挂载目标。
 - bootstrap Job 第一次卡 `ContainerCreating` 无事件 = NFS 挂载挂起（挂载目标错/VPC 不通）；
@@ -290,7 +290,7 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
   纯转发 8081→8080），DSH Pod 只依赖 ACR 里已有的 `dsh` + `dsh-server-login`
   两个镜像 + `imagePullSecret`，彻底去掉 docker.io 依赖。
 - 测鉴权/带 cookie 的接口用 `--resolve` 走域名，别用 `kubectl port-forward`：设了
-  `cookieDomain=.dsh.xulei1112.cloud` 后 cookie 不会发到 `127.0.0.1`。
+  `cookieDomain=.dsh.example.com` 后 cookie 不会发到 `127.0.0.1`。
 
 ### 7.6 每用户 Pod 的 uid 与就绪探针
 
@@ -310,7 +310,7 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
 
 ### 7.4 域名入口被阿里云备案拦截
 
-- 腾讯云入口机 nginx 反代到 ACK 公网 SLB（`8.153.12.52`）时，`Host: dsh.xulei1112.cloud`
+- 腾讯云入口机 nginx 反代到 ACK 公网 SLB（`<SLB_IP>`）时，`Host: dsh.example.com`
   被阿里云返回 `403 Non-compliance ICP Filing`（`Server: Beaver`）——域名在腾讯云备案、
   未在阿里云备案，走阿里云公网 SLB 的 80/443 被备案校验拦。直连 SLB IP（不带域名 Host）
   则 200 正常。

@@ -21,7 +21,7 @@ spec:
         - name: dsh-acr-pull
       containers:
         - name: chmod-root
-          image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          image: registry.example.com/dsh/dsh-server-login:0.2.0
           command: ["sh", "-c", "chmod 1777 /mnt"]
           securityContext:
             runAsUser: 0   # 需 root 才能 chmod；本 Job 跑在 PSA restricted 之前

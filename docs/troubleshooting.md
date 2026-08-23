@@ -53,21 +53,21 @@
 - **根因**：子域名没有覆盖它的证书（只有主域单域证书）。
 - **修法**：DNS 通配 + 通配证书（DNS challenge）：
   ```sh
-  certbot certonly --dns-cloudflare -d '*.dsh.xulei1112.cloud' -d 'dsh.xulei1112.cloud'
+  certbot certonly --dns-cloudflare -d '*.dsh.example.com' -d 'dsh.example.com'
   ```
 
 ## 401：子域名/接口返回 {"error":"unauthorized"}
 
 - **根因**：session cookie 是 host-only（没带 `Domain`），到不了子域名；或浏览器里还是**改配置之前登录**的旧 cookie。
 - **修法**：
-  1. 设 `DSH_SERVER_LOGIN_COOKIE_DOMAIN=.dsh.xulei1112.cloud`（注意前导点），重启。
+  1. 设 `DSH_SERVER_LOGIN_COOKIE_DOMAIN=.dsh.example.com`（注意前导点），重启。
   2. **重新登录**拿带 `Domain` 的新 cookie。
 
 ## 登录后跳管理员界面、无法保持登录
 
 - **现象**：登录后按 admin 角色跳到 `admin.html`，但 admin.html 又弹登录框、再登不上。
 - **根因**：浏览器里存的是旧 cookie（改 `Domain`/`Secure` 之前登录的），不再匹配当前配置。
-- **修法**：删掉浏览器里的 `sid` cookie（DevTools → Application → Cookies → 删除 `dsh.xulei1112.cloud` 域下的 `sid`）重新登录。或本地测试时 `unset DSH_SERVER_LOGIN_COOKIE_DOMAIN DSH_SERVER_LOGIN_SECURE_COOKIES` 让 cookie 回到 host-only + 非 Secure。
+- **修法**：删掉浏览器里的 `sid` cookie（DevTools → Application → Cookies → 删除 `dsh.example.com` 域下的 `sid`）重新登录。或本地测试时 `unset DSH_SERVER_LOGIN_COOKIE_DOMAIN DSH_SERVER_LOGIN_SECURE_COOKIES` 让 cookie 回到 host-only + 非 Secure。
 
 ## nginx 把 Host 头改成了 upstream 名
 

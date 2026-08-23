@@ -22,7 +22,7 @@ spec:
       serviceAccountName: dsh-orchestrator
       containers:
         - name: orchestrator
-          image: crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0
+          image: registry.example.com/dsh/dsh-server-login:0.2.0
           imagePullPolicy: Always
           args: ["--host", "0.0.0.0"]
           env:
@@ -39,17 +39,17 @@ spec:
             - name: DSH_SERVER_LOGIN_SECURE_COOKIES
               value: "true"
             - name: DSH_SERVER_LOGIN_BASE_DOMAIN
-              value: "dsh.xulei1112.cloud"
+              value: "dsh.example.com"
             - name: DSH_SERVER_LOGIN_COOKIE_DOMAIN
-              value: ".dsh.xulei1112.cloud"
+              value: ".dsh.example.com"
             - name: DSH_SERVER_LOGIN_DEPLOY_MODE
               value: "k8s"
             - name: DSH_SERVER_LOGIN_NAMESPACE
               value: "dsh"
             - name: DSH_SERVER_LOGIN_DSH_IMAGE
-              value: "crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh:0.1.1-rc.2"
+              value: "registry.example.com/dsh/dsh:0.1.1-rc.2"
             - name: DSH_SERVER_LOGIN_CONTROL_PLANE_IMAGE
-              value: "crpi-uv66xulvbc3cvbit.cn-shanghai.personal.cr.aliyuncs.com/dsh-pointer-a/dsh-server-login:0.2.0"
+              value: "registry.example.com/dsh/dsh-server-login:0.2.0"
             - name: POD_NAME
               valueFrom:
                 fieldRef:
