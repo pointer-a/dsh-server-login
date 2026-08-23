@@ -415,7 +415,13 @@ export class K8sSpawner implements Spawner {
             name: 'dsh',
             image: this.config.dshImage,
             args,
-            readinessProbe: { tcpSocket: { port: DSH_LOOPBACK_PORT }, initialDelaySeconds: 5, periodSeconds: 3 },
+            // DSH binds loopback only, so a tcpSocket probe (which hits the Pod IP)
+            // would never succeed; probe 127.0.0.1:8080 from inside the container.
+            readinessProbe: {
+              exec: { command: ['node', '-e', 'require("http").get("http://127.0.0.1:8080", r => process.exit(r.statusCode < 500 ? 0 : 1)).on("error", () => process.exit(1))'] },
+              initialDelaySeconds: 5,
+              periodSeconds: 3,
+            },
             env: [
               { name: 'HOME', value: ws },
               { name: 'DSH_HOME', value: home },
