@@ -106,37 +106,48 @@ export class ReconcileController {
   }
 
   private async tick(): Promise<void> {
-    try {
-      const [desired, live] = await Promise.all([
-        this.db.listInstancesByRole('main'),
-        this.spawner.listUserPods(),
-      ])
-      const plan = planReconcile(desired, live)
+    const [desired, live] = await Promise.all([
+      this.db.listInstancesByRole('main'),
+      this.spawner.listUserPods(),
+    ])
+    const plan = planReconcile(desired, live)
 
-      for (const orphan of plan.delete) {
-        // Orphan = a main Pod with no desired row (user deleted or disabled).
+    for (const orphan of plan.delete) {
+      // Orphan = a main Pod with no desired row (user deleted or disabled).
+      await this.safe(`orphan ${orphan.userId}`, async () => {
         await this.db.deleteInstance(orphan.name)
         await this.spawner.stop(orphan.userId)
-      }
-      for (const instance of plan.launch) {
-        await this.spawner.launch(instance.userId, instance.folder ?? '', instance.patch ?? undefined)
-      }
-      // Recreate a lost Service/NetworkPolicy for any desired main that still has a Pod.
-      for (const instance of desired) {
-        if (plan.launch.includes(instance)) continue
-        await this.spawner.ensureUserResources(instance.userId)
-      }
-      // Idle reap (Phase 4): a desired main whose user has no active session has
-      // outlived its session TTL — stop the Pod and drop the desired row so the
-      // next tick does not relaunch it.
-      for (const instance of desired) {
-        if (await this.db.hasActiveSession(instance.userId)) continue
+      })
+    }
+    for (const instance of plan.launch) {
+      await this.safe(`launch ${instance.userId}`, () =>
+        this.spawner.launch(instance.userId, instance.folder ?? '', instance.patch ?? undefined))
+    }
+    // Recreate a lost Service/NetworkPolicy for any desired main that still has a Pod.
+    for (const instance of desired) {
+      if (plan.launch.includes(instance)) continue
+      await this.safe(`ensure ${instance.userId}`, () => this.spawner.ensureUserResources(instance.userId))
+    }
+    // Idle reap (Phase 4): a desired main whose user has no active session has
+    // outlived its session TTL — stop the Pod and drop the desired row so the
+    // next tick does not relaunch it.
+    for (const instance of desired) {
+      await this.safe(`reap ${instance.userId}`, async () => {
+        if (await this.db.hasActiveSession(instance.userId)) return
         await this.spawner.stop(instance.userId)
         await this.db.deleteInstance(instance.id)
-      }
+      })
+    }
+  }
+
+  /** Run one per-user step without letting its failure abort the rest of the tick. */
+  private async safe(label: string, fn: () => Promise<unknown>): Promise<void> {
+    try {
+      await fn()
     } catch (err) {
-      // One bad tick must not kill the loop; the next tick retries.
-      this.spawner.logError?.(err)
+      // One bad user (e.g. a files Pod that can't become Ready) must not block
+      // launches/idle-reap for every other user.
+      this.spawner.logError?.(new Error(`reconcile ${label}: ${err instanceof Error ? err.message : String(err)}`))
     }
   }
 
