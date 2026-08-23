@@ -56,6 +56,9 @@ spec:
                   fieldPath: metadata.name
           ports:
             - containerPort: 3080
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
@@ -64,6 +67,7 @@ spec:
               drop: ["ALL"]
             seccompProfile:
               type: RuntimeDefault
+            readOnlyRootFilesystem: true
           resources:
             requests:
               cpu: "250m"
@@ -71,6 +75,9 @@ spec:
             limits:
               cpu: "1"
               memory: "1Gi"
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

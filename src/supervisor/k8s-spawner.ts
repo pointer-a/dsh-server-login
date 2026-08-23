@@ -68,7 +68,8 @@ function apiKeyEnv(userId: string, apiKey: string | null): k8s.V1EnvVar[] {
   return [{ name: 'DEEPSEEK_API_KEY', valueFrom: { secretKeyRef: { name: names(userId).secret, key: 'key' } } }]
 }
 
-/** Common per-user container security context (non-root + drop ALL + seccomp). */
+/** Common per-user container security context (non-root + drop ALL + seccomp +
+ * read-only rootfs — /tmp comes from an emptyDir, docs/k8s.md Phase 4). */
 function containerSecurity(uid: number): k8s.V1SecurityContext {
   return {
     runAsNonRoot: true,
@@ -76,7 +77,16 @@ function containerSecurity(uid: number): k8s.V1SecurityContext {
     allowPrivilegeEscalation: false,
     capabilities: { drop: ['ALL'] },
     seccompProfile: { type: 'RuntimeDefault' },
+    readOnlyRootFilesystem: true,
   }
+}
+
+/** Writable scratch volume + mount for containers whose rootfs is read-only. */
+function tmpVolume(): k8s.V1Volume[] {
+  return [{ name: 'tmp', emptyDir: {} }]
+}
+function tmpMount(): k8s.V1VolumeMount {
+  return { name: 'tmp', mountPath: '/tmp' }
 }
 
 /** The shared RWX volume (subPath mounts per-user at use time). */
@@ -208,11 +218,11 @@ export class K8sSpawner implements Spawner {
                   { name: 'DSH_SERVER_LOGIN_HANDOFF_PATH', value: `${mount}/${HANDOFF_FILE}` },
                   ...apiKeyEnv(userId, apiKey),
                 ],
-                volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
+                volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }, tmpMount()],
                 securityContext: containerSecurity(uid),
               },
             ],
-            volumes: dataVolume(),
+            volumes: [...dataVolume(), ...tmpVolume()],
           },
         },
       },
@@ -432,6 +442,7 @@ export class K8sSpawner implements Spawner {
             volumeMounts: [
               { name: 'data', mountPath: mount, subPath: userId },
               ...(patchConfigMapName !== undefined ? [{ name: 'patch', mountPath: '/etc/dsh', readOnly: true }] : []),
+              tmpMount(),
             ],
             securityContext: containerSecurity(uid),
             resources: { requests: { cpu: '500m', memory: '1Gi' }, limits: { cpu: '2', memory: '4Gi' } },
@@ -448,6 +459,7 @@ export class K8sSpawner implements Spawner {
         volumes: [
           ...dataVolume(),
           ...(patchConfigMapName !== undefined ? [{ name: 'patch', configMap: { name: patchConfigMapName } }] : []),
+          ...tmpVolume(),
         ],
       },
     } })
@@ -553,12 +565,12 @@ export class K8sSpawner implements Spawner {
               env: [{ name: USER_ROOT_ENV, value: mount }],
               ports: [{ containerPort: FILE_SERVICE_PORT }],
               readinessProbe: { tcpSocket: { port: FILE_SERVICE_PORT }, initialDelaySeconds: 2, periodSeconds: 3 },
-              volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }],
+              volumeMounts: [{ name: 'data', mountPath: mount, subPath: userId }, tmpMount()],
               securityContext: containerSecurity(uid),
               resources: { requests: { cpu: '50m', memory: '128Mi' }, limits: { cpu: '200m', memory: '256Mi' } },
             },
           ],
-          volumes: [...dataVolume(), ...dataRootVolume()],
+          volumes: [...dataVolume(), ...dataRootVolume(), ...tmpVolume()],
         },
       } }),
       del: () => this.core.deleteNamespacedPod({ name, namespace: this.namespace }),

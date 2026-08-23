@@ -83,9 +83,11 @@ test('k8s: launch creates DSH Pod/Service/NP and calls ensureFileService first',
   assert.equal(filesPod.spec.containers[0].args[0], 'file-service', 'files container runs the file-service subcommand')
   assert.equal(filesPod.spec.initContainers.length, 1, 'files Pod carries the user-dir init container')
   const filesMounts = filesPod.spec.containers[0].volumeMounts
-  assert.equal(filesMounts.length, 1, 'files container mounts exactly its own subPath')
+  assert.equal(filesMounts.length, 2, 'files container mounts its subPath + /tmp')
   assert.equal(filesMounts[0].name, 'data')
   assert.equal(filesMounts[0].subPath, 'u1', 'files container mounts <pvc>/u1 via subPath')
+  assert.equal(filesMounts[1].name, 'tmp', 'files container mounts emptyDir /tmp (read-only rootfs)')
+  assert.equal(filesPod.spec.containers[0].securityContext.readOnlyRootFilesystem, true, 'files container rootfs is read-only')
   const initMount = filesPod.spec.initContainers[0].volumeMounts[0]
   assert.equal(initMount.name, 'data-root', 'init container mounts the PVC root (no subPath)')
   assert.equal(initMount.subPath, undefined, 'init container has no subPath')
