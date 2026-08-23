@@ -384,3 +384,12 @@ kubectl run pgbench-init --restart=Never --image=postgres:16 -n <ns> \
   低危）。后续若要加固，给状态变更端点加 CSRF token / 自定义头校验。
 - **OWASP ZAP 基线扫描**：未在本轮执行（需 ZAP 工具/容器）。已定位的 XSS 已人工修，
   ZAP 可作为 CI 门禁后续接入。
+
+### 8.5 联调后期修的 4 个根因 bug（2026-08-23）
+
+| 症状 | 根因 | 修复 |
+|---|---|---|
+| leader 不接管，lease 挂旧 pod 数小时 | client-node `patchNamespacedLease` 走 JSON Patch（要数组），传对象被 Go 拒 400 被静默吞 | 改 `replaceNamespacedLease` 全量 PUT + RV 乐观并发 |
+| admin DSH 反复 502 | `endpointFor` 返回 Service DNS，A 记录 ~30s TTL，Pod 重启后这 30s 内仍解析旧 IP | endpointFor 直接返回 `podIP`，每次请求实时读 Pod |
+| 模型无法请求（EAI_AGAIN） | ACK DNS 是 `node-local-dns`（label `k8s-app=node-local-dns`），NP 规则却选 `k8s-app=kube-dns` → DNS 全被拦 | NP DNS egress 改 `0.0.0.0/0`（可移植） |
+| keepAlive 池销毁后不可复用 | `agent.destroy()` 只销毁不替换，后续请求首跳全失败 | destroy 后 `new Agent()` 替换，再短连接重试一次 |
