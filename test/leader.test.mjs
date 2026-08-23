@@ -49,7 +49,7 @@ test('leader: first candidate creates the lease and leads', async () => {
       return body
     },
     async readNamespacedLease() { throw Object.assign(new Error('nf'), { code: 404 }) },
-    async patchNamespacedLease({ body }) { patched.push(body) },
+    async replaceNamespacedLease({ body }) { patched.push(body) },
   }
   const started = []
   const elector = new LeaderElector({ namespace: 'dsh', identity: 'pod-1', coordination, now: () => 1_000_000 })
@@ -66,7 +66,7 @@ test('leader: a second candidate backs off while a live holder leads', async () 
   const coordination = {
     async createNamespacedLease() { throw Object.assign(new Error('exists'), { code: 409 }) },
     async readNamespacedLease() { return lease('pod-1', 10_000_000) }, // renew 1s ago, live
-    async patchNamespacedLease() { throw new Error('should not patch') },
+    async replaceNamespacedLease() { throw new Error('should not replace') },
   }
   const elector = new LeaderElector({
     namespace: 'dsh',
@@ -84,7 +84,7 @@ test('leader: a stale lease is taken over with a bumped transition', async () =>
   const coordination = {
     async createNamespacedLease() { throw Object.assign(new Error('exists'), { code: 409 }) },
     async readNamespacedLease() { return lease('pod-1', 10_000_000, 3, 'rv-9') }, // renew 20s ago, expired
-    async patchNamespacedLease({ body }) { patched = body },
+    async replaceNamespacedLease({ body }) { patched = body },
   }
   const started = []
   const elector = new LeaderElector({
@@ -107,11 +107,11 @@ test('leader: re-acquiring our own lease renews rather than bumps', async () => 
   const coordination = {
     async createNamespacedLease() { throw Object.assign(new Error('exists'), { code: 409 }) },
     async readNamespacedLease() { return lease('pod-1', 30_000_000, 0, 'rv-2') },
-    async patchNamespacedLease({ body }) { patched = body },
+    async replaceNamespacedLease({ body }) { patched = body },
   }
   const elector = new LeaderElector({ namespace: 'dsh', identity: 'pod-1', coordination, now: () => 30_000_000 })
   await elector.start()
   assert.equal(elector.isLeader, true)
-  assert.equal(patched.spec.leaseTransitions, undefined, 'renewing does not bump transitions')
+  assert.equal(patched.spec.leaseTransitions, 0, 'renewing preserves transitions (does not bump)')
   elector.stop()
 })

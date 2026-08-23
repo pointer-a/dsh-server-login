@@ -46,6 +46,12 @@ function toMillis(time: unknown): number {
   return 0
 }
 
+/** Normalize a read-back `V1MicroTime` (string) back to a Date for the replace body. */
+function toMicroTime(time: unknown): k8s.V1MicroTime | undefined {
+  const ms = toMillis(time)
+  return ms > 0 ? new k8s.V1MicroTime(ms) : undefined
+}
+
 /** Acquire/keep a Lease, notifying callers across leadership changes. */
 export class LeaderElector {
   private readonly coordination: k8s.CoordinationV1Api
@@ -180,47 +186,59 @@ export class LeaderElector {
       const holder = current.spec?.holderIdentity
       const renew = toMillis(current.spec?.renewTime)
       if (holder === this.identity) {
-        // We already hold it (e.g. after a restart) — re-read for a fresh RV then renew.
-        const fresh = await this.coordination.readNamespacedLease({
-          name: this.leaseName,
-          namespace: this.namespace,
-        })
-        await this.renew(fresh.metadata?.resourceVersion)
+        // We already hold it (e.g. after a restart) — renew, then resume leading.
+        await this.renew()
         this.becomeLeader(current.spec?.leaseTransitions ?? 0, this.now())
         return
       }
       const expired = this.now() - renew > this.leaseDurationSeconds * 1000
       if (!expired) return // a live leader holds it; back off
       const transitions = (current.spec?.leaseTransitions ?? 0) + 1
-      await this.coordination.patchNamespacedLease({
+      const now = this.now()
+      // `patchNamespacedLease` uses JSON Patch (an array); a full replace with a
+      // resourceVersion gives the optimistic-concurrency takeover we want.
+      await this.coordination.replaceNamespacedLease({
         name: this.leaseName,
         namespace: this.namespace,
         body: {
-          metadata: { resourceVersion: current.metadata?.resourceVersion },
+          apiVersion: 'coordination.k8s.io/v1',
+          kind: 'Lease',
+          metadata: { name: this.leaseName, namespace: this.namespace, resourceVersion: current.metadata?.resourceVersion },
           spec: {
             holderIdentity: this.identity,
-            acquireTime: new k8s.V1MicroTime(this.now()),
-            renewTime: new k8s.V1MicroTime(this.now()),
+            leaseDurationSeconds: this.leaseDurationSeconds,
+            acquireTime: new k8s.V1MicroTime(now),
+            renewTime: new k8s.V1MicroTime(now),
             leaseTransitions: transitions,
           },
         },
       })
-      this.becomeLeader(transitions, this.now())
+      this.becomeLeader(transitions, now)
     }
   }
 
-  private async renew(resourceVersion?: string): Promise<void> {
+  private async renew(): Promise<void> {
     const now = this.now()
-    const rv =
-      resourceVersion ??
-      (await this.coordination.readNamespacedLease({ name: this.leaseName, namespace: this.namespace })).metadata
-        ?.resourceVersion
-    await this.coordination.patchNamespacedLease({
+    // Always read the latest lease so we preserve holder/acquireTime/transitions
+    // and bump only renewTime.
+    const current = await this.coordination.readNamespacedLease({
+      name: this.leaseName,
+      namespace: this.namespace,
+    })
+    await this.coordination.replaceNamespacedLease({
       name: this.leaseName,
       namespace: this.namespace,
       body: {
-        metadata: rv === undefined ? {} : { resourceVersion: rv },
-        spec: { renewTime: new k8s.V1MicroTime(now) },
+        apiVersion: 'coordination.k8s.io/v1',
+        kind: 'Lease',
+        metadata: { name: this.leaseName, namespace: this.namespace, resourceVersion: current.metadata?.resourceVersion },
+        spec: {
+          holderIdentity: current.spec?.holderIdentity ?? this.identity,
+          leaseDurationSeconds: this.leaseDurationSeconds,
+          acquireTime: toMicroTime(current.spec?.acquireTime),
+          renewTime: new k8s.V1MicroTime(now),
+          leaseTransitions: current.spec?.leaseTransitions ?? 0,
+        },
       },
     })
     this.lastRenew = now
