@@ -1,5 +1,7 @@
 # 部署教程（新手版）— DSH 服务端登录插件
 
+> 🧭 [← 返回 README](../README.md) · 进阶加固：[硬隔离](hard-isolation.md) · 出问题：[排查手册](troubleshooting.md) · 域名细节：[域名配置示例](domain-config.md)
+
 这份教程假设你**第一次**部署这类服务。每一步都写清楚「做什么、为什么、怎么做、应该看到什么」。照着顺序做，大约 15–30 分钟能把整套跑通。
 
 > 全文用 `example.com` 当例子，**请把所有 `example.com` 换成你自己的域名**。比如你的域名是 `dsh.baidu.com`，那么 `dsh.example.com` 就是 `dsh.baidu.com`，`*.dsh.example.com` 就是 `*.dsh.baidu.com`。
@@ -155,6 +157,8 @@ EOF
 | `DSH_SERVER_LOGIN_SECURE_COOKIES` | `true` | 走 HTTPS，cookie 必须标 `Secure`。 |
 | `DSH_SERVER_LOGIN_DSH_BIN` | `/root/.nvm/versions/node/v22.23.2/bin/dsh` | 编排服务用它启动每个用户的 DSH。**用绝对路径**，别写 `dsh`——systemd 的 PATH 找不到（否则报 `spawn dsh ENOENT`）。版本号按你实际 nvm 版本改：`ls ~/.nvm/versions/node/`。 |
 
+> 🔐 **可选加固（生产建议）**：在 env 文件里再加一行 `DSH_SERVER_LOGIN_PORT_GUARD=true`。它用 iptables 的 OUTPUT owner-match 规则，禁止同机其他账号直连各用户 DSH 的回环端口（编排服务自身不受影响）。仅 Linux + root 有效；在不支持的环境下开启会直接拒绝启动，避免「以为有防护其实没有」。
+
 > 🔑 **API 密钥是每用户自己的密钥库**：不再在环境变量里配平台 key。每个用户登录后，在桌面 → DSH 窗口点「**管理密钥**」（在「管理插件」旁）添加多个**命名的**密钥（AES-256-GCM 加密存在该用户自己的数据里），并可**选择启用哪一个**；spawn 时只注入该用户当前启用的 key。未设置 key 的用户，其 DSH 能启动但无法调用模型。
 
 ### 6.1 先手动跑一次（验证能起来）
@@ -242,7 +246,9 @@ certbot certonly --dns-cloudflare \
 ```
 
 > 如果你不用 Cloudflare，改用对应插件（阿里云 `--dns-aliyun`、腾讯云 `--dns-tencentcloud`、DNSPod `--dns-dnspod` 等），原理一样。
-*要注意cloudflare的免费套餐只提供托管二级及以下域名，若你的通配域名到了第三级，可以选择关闭cloudflare的代理，当然这会带来较大风险*
+>
+> ⚠️ Cloudflare 免费套餐只代理二级及以下的域名；若你的通配域名到了第三级（如 `*.dsh.example.com`），需要把该记录的 Cloudflare 代理关掉（灰云，仅 DNS）。这会暴露服务器真实 IP，请自行权衡风险。
+
 签好后证书在这里：
 
 ```sh
@@ -324,7 +330,7 @@ nginx -t && systemctl reload nginx
 
 ## 10. 第 9 步：（可选）账号级硬隔离
 
-> **新手可跳过这一步**，默认的「软隔离」已经能跑、能用。硬隔离是给生产环境防「一个用户偷看另一个用户文件」用的进阶项，需要 root 权限。想上再看 [security-model.md](security-model.md)。
+> **新手可跳过这一步**，默认的「软隔离」已经能跑、能用。硬隔离是给生产环境防「一个用户偷看另一个用户文件」用的进阶项，需要 root 权限。想做就按 [hard-isolation.md](hard-isolation.md) 一步步操作。
 
 ---
 

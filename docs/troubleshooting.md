@@ -1,5 +1,7 @@
 # 常见问题排查 — DSH 服务端登录插件
 
+> 🧭 [← 返回 README](../README.md) · 部署教程：[deployment](deployment.md) · 硬隔离：[hard-isolation](hard-isolation.md)
+
 按「现象 → 根因 → 修法」组织，都是实际部署中踩过的坑。
 
 ## 502：启动 DSH 后打开是 Bad Gateway

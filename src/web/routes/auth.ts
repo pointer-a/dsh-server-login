@@ -64,8 +64,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       // Create the user first so `initUserRoot` resolves the DB-assigned uid
       // (baseUid + row_id) instead of the hash fallback — the per-user Pods and
       // the DSH Pod must run as the *same* uid or the DSH cannot write its dirs.
-      await app.db.createUser({ id, username, passHash, role: 'pending', homeDir })
-      await app.userFs.initUserRoot(id)
+      const user = await app.db.createUser({ id, username, passHash, role: 'pending', homeDir })
+      await app.userFs.initUserRoot(id, user.uid ?? undefined)
       await app.db.audit(id, 'register', JSON.stringify({ username }))
       return reply.code(201).send({ user: { id, username, role: 'pending' } })
     },

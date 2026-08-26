@@ -6,13 +6,14 @@
  * @module dsh-server-login/fs/local-user-fs
  */
 
+import { chownSync, chmodSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PathEscapeError, resolveWithinRoot, safeFilename } from '../web/middleware/fs-guard.js'
 import { listInstalledPlugins, type PluginInfo } from './plugins.js'
 import { UserFsError, type UserFs } from './user-fs.js'
-import { ensureDir, handoffPath, homeRoot, listDir, workspaceRoot, type FsEntry } from './workspace.js'
+import { ensureDir, handoffPath, homeRoot, listDir, rejectSymlinkEscape, workspaceRoot, type FsEntry } from './workspace.js'
 
 /** Resolve a user id to that user's data root (`<dataRoot>/users/<id>`, or a
  * fixed directory when the sidecar serves exactly one user). */
@@ -29,10 +30,21 @@ function fsError(err: unknown, onMissing: 'not_found' | 'parent_missing'): never
 export class LocalUserFs implements UserFs {
   constructor(private readonly rootFor: UserRootResolver) {}
 
-  async initUserRoot(userId: string): Promise<void> {
+  async initUserRoot(userId: string, uid?: number): Promise<void> {
     const root = this.rootFor(userId)
     ensureDir(homeRoot(root))
     ensureDir(workspaceRoot(root))
+    // The roots were created by the (possibly root) control plane; the DSH child
+    // runs as the user's own uid and must be able to traverse + write them.
+    // chown the user root + home/ws so the child can mkdir profiles/, etc.
+    if (uid !== undefined && typeof process.getuid === 'function' && process.getuid() === 0) {
+      chownSync(root, uid, uid)
+      chownSync(homeRoot(root), uid, uid)
+      chownSync(workspaceRoot(root), uid, uid)
+      // 0700 + sticky-ish owner only; keep group/other off.
+      chmodSync(homeRoot(root), 0o700)
+      chmodSync(workspaceRoot(root), 0o700)
+    }
   }
 
   resolvePath(userId: string, relPath: string): string {
@@ -41,6 +53,7 @@ export class LocalUserFs implements UserFs {
 
   async listDir(userId: string, relPath: string): Promise<FsEntry[]> {
     const abs = this.resolve(userId, relPath)
+    await this.assertNoLinks(userId, abs)
     try {
       return await listDir(abs)
     } catch (err) {
@@ -50,6 +63,7 @@ export class LocalUserFs implements UserFs {
 
   async mkdir(userId: string, relPath: string): Promise<void> {
     const abs = this.resolve(userId, relPath)
+    await this.assertNoLinks(userId, abs)
     try {
       await mkdir(abs)
     } catch (err) {
@@ -61,6 +75,7 @@ export class LocalUserFs implements UserFs {
     const dirAbs = this.resolve(userId, relPath)
     const filename = this.sanitize(name)
     const target = join(dirAbs, filename)
+    await this.assertNoLinks(userId, target)
     try {
       if (type === 'dir') await mkdir(target)
       else await writeFile(target, '')
@@ -73,8 +88,10 @@ export class LocalUserFs implements UserFs {
   async upload(userId: string, relPath: string, name: string, data: Buffer): Promise<string> {
     const dirAbs = this.resolve(userId, relPath)
     const filename = this.sanitize(name)
+    const target = join(dirAbs, filename)
+    await this.assertNoLinks(userId, target)
     try {
-      await writeFile(join(dirAbs, filename), data)
+      await writeFile(target, data)
     } catch (err) {
       fsError(err, 'parent_missing')
     }
@@ -83,6 +100,7 @@ export class LocalUserFs implements UserFs {
 
   async isDirectory(userId: string, relPath: string): Promise<boolean> {
     const abs = this.resolve(userId, relPath)
+    await this.assertNoLinks(userId, abs)
     try {
       return (await stat(abs)).isDirectory()
     } catch (err) {
@@ -107,6 +125,20 @@ export class LocalUserFs implements UserFs {
     ensureDir(ws)
     try {
       return resolveWithinRoot(ws, relPath)
+    } catch (err) {
+      if (err instanceof PathEscapeError) throw new UserFsError('bad_path')
+      throw err
+    }
+  }
+
+  /** The lexical guard above is prefix-only and blind to links planted inside
+   * the workspace, so every operation re-walks its final absolute path (the
+   * write target for upload/createEntry) and rejects any symlink component —
+   * `writeFile`/`mkdir` would otherwise follow it outside the root with this
+   * process's privileges. Surfaces as the usual `bad_path` wire code. */
+  private async assertNoLinks(userId: string, abs: string): Promise<void> {
+    try {
+      await rejectSymlinkEscape(workspaceRoot(this.rootFor(userId)), abs)
     } catch (err) {
       if (err instanceof PathEscapeError) throw new UserFsError('bad_path')
       throw err

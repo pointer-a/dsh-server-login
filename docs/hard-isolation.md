@@ -1,5 +1,7 @@
 # 硬隔离教程（新手版）— 每用户独立 OS 账号
 
+> 🧭 [← 返回 README](../README.md) · 前置：[基础部署](deployment.md) · 出问题：[排查手册](troubleshooting.md)
+
 > 本教程是 [deployment.md](deployment.md) 的进阶篇。先按那篇把整套跑通、能正常登录和打开 DSH，再回来做这个。
 > 全文用 `example.com` 举例，请替换成你自己的域名；`/root/dsh-server-login` 换成你实际 `git clone` 的目录。
 
@@ -118,7 +120,7 @@ chmod +x provision-user.sh
 ./provision-user.sh <userId>
 ```
 
-**userId 从哪拿**：用管理员登录 → 管理台 → 用户列表里那个 id（或直接查库，见 [troubleshooting.md](troubleshooting.md) 的「查看管理员账号」一节）。
+**userId 从哪拿**：管理员登录后访问 `/api/admin/users`（返回 JSON 里每个用户的 `id` 字段），或直接查数据库 `users` 表。
 
 ### 3.1 让它自动跑（不用每次手动）
 

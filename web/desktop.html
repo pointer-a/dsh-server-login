@@ -315,7 +315,7 @@
       function renderBreadcrumb() {
         const parts = ['<span class="crumb" data-path="">根</span>']
         let acc = []
-        for (const seg of currentPath) { acc.push(seg); parts.push('<span class="sep">/</span><span class="crumb" data-path="' + acc.join('/') + '">' + seg + '</span>') }
+        for (const seg of currentPath) { acc.push(seg); parts.push('<span class="sep">/</span><span class="crumb" data-path="' + esc(acc.join('/')) + '">' + esc(seg) + '</span>') }
         breadcrumb.innerHTML = parts.join('')
         breadcrumb.querySelectorAll('.crumb').forEach((c) => c.addEventListener('click', () => navigate(c.dataset.path)))
       }
@@ -469,7 +469,7 @@
         for (const plugin of plugins) {
           const label = document.createElement('label')
           label.className = 'plugin-item'
-          label.innerHTML = `<input type="checkbox" data-id="${plugin.id}" ${plugin.enabled ? 'checked' : ''}/> <strong>${esc(plugin.name)}</strong> — ${esc(plugin.description || '')}`
+          label.innerHTML = `<input type="checkbox" data-id="${esc(plugin.id)}" ${plugin.enabled ? 'checked' : ''}/> <strong>${esc(plugin.name)}</strong> — ${esc(plugin.description || '')}`
           list.appendChild(label)
         }
       }
@@ -479,7 +479,13 @@
         if (!panel.classList.contains('hidden')) await loadPlugins()
       })
       document.getElementById('savePluginsBtn').addEventListener('click', async () => {
-        const plugins = pluginCatalog.map((p) => ({ id: p.id, enabled: document.querySelector(`input[data-id="${p.id}"]`).checked }))
+        // Read checked state from the DOM (dataset.id is the decoded original id)
+        // instead of building a `input[data-id="..."]` selector: a plugin id with
+        // quotes/backslashes would throw a SyntaxError in querySelector.
+        const checked = new Set(
+          Array.from(document.querySelectorAll('#pluginList input[data-id]:checked'), (el) => el.dataset.id),
+        )
+        const plugins = pluginCatalog.map((p) => ({ id: p.id, enabled: checked.has(p.id) }))
         const res = await fetch('/api/plugins/select', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder: pathString(), plugins }) })
         if (res.ok) alert('已保存')
       })

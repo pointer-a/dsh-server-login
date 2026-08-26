@@ -42,6 +42,9 @@ function buildUpstreamHeaders(headers: IncomingHttpHeaders, port: number): Recor
     if (value === undefined || STRIP_HEADERS.has(key.toLowerCase())) continue
     out[key] = value as string | string[]
   }
+  // Keep Host loopback: DSH's /api trust fence requires the Host to be loopback
+  // or a `--trusted-host` authority — a real domain would 403 every /api call.
+  // DSH's absolute URLs are rewritten to the real origin in proxyHttp below.
   out.host = `127.0.0.1:${port}`
   return out
 }
@@ -61,6 +64,16 @@ export function parseSubdomain(host: string | undefined, baseDomain: string): st
 /** The per-user subdomain for a username, or null when `baseDomain` is unset. */
 export function subdomainForUser(baseDomain: string, username: string): string | null {
   return baseDomain === '' ? null : `${username.toLowerCase()}.${baseDomain}`
+}
+
+/** The browser-facing origin (`<scheme>://<host>`) this request reached us with,
+ * used to rewrite DSH's loopback absolute URLs back to the real domain. */
+function realOrigin(headers: IncomingHttpHeaders): string | undefined {
+  const host = clientHost(headers)
+  if (host === undefined) return undefined
+  const proto = headers['x-forwarded-proto']
+  const scheme = typeof proto === 'string' && proto !== '' ? proto : 'https'
+  return `${scheme}://${host}`
 }
 
 /** A subdomain resolution: a tunnelable endpoint, an error to return, or null (not a subdomain). */
@@ -112,6 +125,7 @@ function proxyHttp(
   endpoint: Endpoint,
   targetPath: string,
   rewritePrefix?: string,
+  rewriteLoopbackLocation = false,
 ): void {
   reply.hijack()
   const attempt = (retry: boolean): void => {
@@ -140,6 +154,17 @@ function proxyHttp(
           !location.startsWith(rewritePrefix)
         ) {
           headers.location = rewritePrefix + location
+        }
+        // local mode only: DSH builds absolute URLs from the loopback Host we
+        // forward; rewrite any 127.0.0.1 Location to the real origin so the
+        // browser doesn't jump to the user's own machine. k8s mode keeps its
+        // verified behavior (no rewrite).
+        if (
+          rewriteLoopbackLocation &&
+          typeof location === 'string' &&
+          realOrigin(request.headers) !== undefined
+        ) {
+          headers.location = location.replace(/^https?:\/\/127\.0\.0\.1(:\d+)?/, realOrigin(request.headers)!)
         }
         reply.raw.writeHead(upRes.statusCode ?? 502, headers)
         upRes.pipe(reply.raw)
@@ -178,7 +203,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
     const prefix = `/u/${slug}/dsh`
     const rawUrl = request.raw.url ?? '/'
     const targetPath = rawUrl.startsWith(prefix) ? rawUrl.slice(prefix.length) || '/' : rawUrl
-    proxyHttp(request, reply, endpoint, targetPath, prefix)
+    proxyHttp(request, reply, endpoint, targetPath, prefix, app.config.deployMode === 'local')
   })
 
   // Per-user subdomain: HTTP (intercept before normal routing).
@@ -189,7 +214,7 @@ export async function registerDshProxy(app: FastifyInstance): Promise<void> {
       reply.code(access.code).send({ error: access.error })
       return
     }
-    proxyHttp(request, reply, access.endpoint, request.raw.url ?? '/')
+    proxyHttp(request, reply, access.endpoint, request.raw.url ?? '/', undefined, app.config.deployMode === 'local')
   })
 
   // Per-user subdomain: WebSocket upgrade tunnel. Auth is async (DB lookup), so

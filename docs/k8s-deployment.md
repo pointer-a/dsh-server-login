@@ -1,7 +1,9 @@
-# K8s 部署教程（模式 B）
+# K8s 部署教程（模式 B）— DSH 服务端登录插件
 
-> 把 `dsh-server-login` 部署成**多机 HA、每用户独立 Pod** 的形态。定案设计见
-> [k8s.md](k8s.md)；本文是**可复制的分步部署教程**（踩坑排查见 [k8s-deploy.md](k8s-deploy.md)）。
+> 🧭 [← 返回 README](../README.md) · 卡住了：[踩坑记录](k8s-deploy.md) · 模式 A 教程：[deployment](deployment.md)
+
+> 把 `dsh-server-login` 部署成**多机 HA、每用户独立 Pod** 的形态。本文是**可复制的分步部署教程**；
+> 实机逐条踩坑与根因排查见 [k8s-deploy.md](k8s-deploy.md)。
 >
 > 实测环境：阿里云 ACK 智能托管（华东2）+ CNFS(NAS) + CloudNativePG + 私有 ACR。
 
@@ -130,8 +132,6 @@ spec:
 ```
 
 ---
-
-
 
 ## 7. 验收清单
 

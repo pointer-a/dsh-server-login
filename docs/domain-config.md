@@ -1,5 +1,7 @@
 # 域名配置示例 — DSH 服务端登录插件
 
+> 🧭 [← 返回 README](../README.md) · 基础部署：[deployment](deployment.md) · 出问题：[排查手册](troubleshooting.md)
+
 本文给出域名与 nginx 的配置示例。**注意**：默认访问方式已改为**每用户子域名**（`<用户名>.dsh.<域名>`，HTTP + WebSocket 均已支持）——因为 DSH 的 SPA 用绝对路径、子路径方案不兼容。通配 nginx 配置见 [deployment.md §6](deployment.md)，常见问题见 [troubleshooting.md](troubleshooting.md)。下面的「子路径」示例仅作遗留参考。
 
 ## 1. 访问拓扑
@@ -64,7 +66,7 @@ server {
 
 **说明**：上面只配置了默认域名一条规则；`/u/<userId>/dsh/` 的转发到哪台每用户 DSH，由编排服务内部决定，nginx 不关心。
 
-## 3. 自定义域名（每用户专属域名）— 待接入（P6）
+## 3. 自定义域名（每用户专属域名）
 
 设计目标：每个用户可用自己的域名直达自己的 DSH，例如 `https://alice.example.com` → alice 的 DSH。
 
@@ -98,7 +100,7 @@ server {
 > 于是 `https://alice.example.com/foo` → `http://127.0.0.1:3080/u/<alice-user-id>/dsh/foo`。
 > 编排服务再剥掉 `/u/<userId>/dsh` 前缀转发给该用户的 DSH。
 
-### 3.2 自动生成（P6）
+### 3.2 自动生成（已实现）
 
 `POST /api/nginx/regen` 会根据 `domains` 表为每个已验证的自定义域名生成一个上面的 `server {}` 块，
 由 [src/nginx/generate.ts](../src/nginx/generate.ts) 的 `renderServerBlock(domain, upstreamPort)` 渲染，运维写入
@@ -114,8 +116,7 @@ sudo certbot --nginx -d dsh.example.com
 sudo certbot --nginx -d alice.example.com
 ```
 
-证书签发后 certbot 会自动改写对应 `server {}` 的 `ssl_certificate*`。P6 会把这步与 `PUT /api/domain`
-（DNS/HTTP 挑战验证）串起来，实现「用户填域名 → 自动验证 → 自动签发 → 生成并热加载 nginx 配置」。
+证书签发后 certbot 会自动改写对应 `server {}` 的 `ssl_certificate*`。证书的自动签发/续期（ACME）暂未接入：目前域名由管理员在管理台手动标记「已验证」，签发仍用 certbot 手动跑。后续计划把这一步与 `PUT /api/domain`（DNS/HTTP 挑战验证）串起来，实现「用户填域名 → 自动验证 → 自动签发 → 生成并热加载 nginx 配置」。
 
 ## 5. WebSocket 说明
 
@@ -126,10 +127,12 @@ DSH Web UI 使用 WebSocket。编排服务的反向代理已支持 WebSocket 隧
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | `GET` | `/api/domain` | 查询当前用户的域名 + nginx 配置 |
-| `PUT` | `/api/domain` | 设置自定义域名，触发 ACME 验证 |
+| `PUT` | `/api/domain` | 设置自定义域名，生成对应的 nginx `server {}` 块（`verified` 重置为 0） |
 | `POST` | `/api/nginx/regen` | 重新生成并预览 nginx `server {}` 块 |
+| `GET` | `/api/admin/domains` | 管理员：列出所有自定义域名 |
+| `POST` | `/api/admin/domains/:id/verify` | 管理员：手动标记域名「已验证」（DNS 归属校验暂未自动化） |
 
-实现见 [src/web/routes/domain.ts](../src/web/routes/domain.ts)（当前为 stub）。
+实现见 [src/web/routes/domain.ts](../src/web/routes/domain.ts) 与 [src/nginx/generate.ts](../src/nginx/generate.ts)。
 
 ## 7. 生产环境变量
 

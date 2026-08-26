@@ -100,8 +100,8 @@ async function bootstrapAdmin(args: string[]): Promise<void> {
   const passHash = await hashPassword(password)
   // Create the user before initUserRoot so the per-user uid (baseUid + row_id)
   // is already assigned — same reason as the register route.
-  await db.createUser({ id, username, passHash, role: 'admin', homeDir })
-  await createUserFs(config).initUserRoot(id)
+  const user = await db.createUser({ id, username, passHash, role: 'admin', homeDir })
+  await createUserFs(config).initUserRoot(id, user.uid ?? undefined)
   await db.close()
   console.log(`admin "${username}" created (id: ${id})`)
 }

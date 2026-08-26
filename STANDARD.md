@@ -1,6 +1,6 @@
 # STANDARD — DSH 插件市场收录与安装规范
 
-🌐 **语言 / Language:** **中文** | [English](STANDARD.en.md)
+🌐 **语言 / Language:** **中文**（English 版暂未提供）
 
 > 本规范定义「一个仓库怎么写，才能被 [DSH 插件市场](https://github.com/bradeGithub/DSH-Plugins-Marketplace)正确识别、正确安装、正确显示更新」。
 > 市场安装管线是**特征驱动**的：它扫描仓库文件形态决定安装方式。本文档把判定规则、每类插件的规范写法、

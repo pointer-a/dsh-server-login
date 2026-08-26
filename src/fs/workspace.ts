@@ -9,8 +9,9 @@
  */
 
 import { mkdirSync } from 'node:fs'
-import { readdir, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, readdir, stat } from 'node:fs/promises'
+import { join, relative, sep } from 'node:path'
+import { PathEscapeError } from '../web/middleware/fs-guard.js'
 
 // Layout segment names. Exported so the k8s Pod spec can build the same layout
 // with POSIX separators (`join` would emit backslashes when the control plane
@@ -43,6 +44,40 @@ export function handoffPath(root: string): string {
 /** Create a directory (0700) if it does not exist. */
 export function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true, mode: 0o700 })
+}
+
+/**
+ * Reject `abs` when any path component between `root` and `abs` (inclusive) is
+ * a symbolic link. The lexical guard (`resolveWithinRoot`) cannot see links
+ * planted INSIDE the workspace: an upload through `ws/link -> /etc` passes the
+ * prefix check and lands outside the user's root with the caller's privileges.
+ * The desktop surface never needs symlinks, so they are forbidden here; the
+ * user's DSH process keeps its normal kernel view of links.
+ *
+ * Only components strictly below `root` are inspected — the data root itself
+ * may legitimately sit behind a link. A missing (or not-a-directory) component
+ * ends the walk: nothing can exist below it, and the caller's own open/stat
+ * will surface that as its usual errno.
+ */
+export async function rejectSymlinkEscape(root: string, abs: string): Promise<void> {
+  const rel = relative(root, abs)
+  if (rel === '') return // abs IS the root
+  if (rel.startsWith('..')) throw new PathEscapeError(abs, root)
+  let current = root
+  for (const segment of rel.split(sep)) {
+    if (segment === '' || segment === '.') continue
+    current = join(current, segment)
+    try {
+      const stats = await lstat(current)
+      if (stats.isSymbolicLink()) throw new PathEscapeError(abs, root)
+    } catch (err) {
+      if (err instanceof PathEscapeError) throw err
+      const code = (err as NodeJS.ErrnoException).code
+      // Missing/not-a-directory component: nothing below it can exist either.
+      if (code === 'ENOENT' || code === 'ENOTDIR') return
+      throw err
+    }
+  }
 }
 
 /** One filesystem entry as returned to the desktop. */

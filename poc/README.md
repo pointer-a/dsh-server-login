@@ -1,6 +1,8 @@
 # Phase 3 核心路径 PoC（不写业务代码）
 
-> 对应 `docs/k8s.md` §7 的四项风险验证。**不引入任何业务代码**——全部用一次性
+> 🧭 [← 返回 README](../README.md) · 结论落地为：[K8s 部署教程](../docs/k8s-deployment.md)
+
+> 对应内部设计稿 §7 的四项风险验证。**不引入任何业务代码**——全部用一次性
 > 镜像（busybox / node / socat / CloudNativePG）验证基础设施假设。四项全部通过，
 > 才允许进入 Phase 0 镜像化 / Phase 2/3 落地，避免 Phase 3 返工。
 

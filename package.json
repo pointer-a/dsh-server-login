@@ -22,7 +22,7 @@
     "prepare": "npm run build",
     "dev": "node lib/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/db.test.mjs test/k8s-spawner.test.mjs test/leader.test.mjs",
+    "test": "npm run build && node --test test/db.test.mjs test/k8s-spawner.test.mjs test/leader.test.mjs test/local-user-fs.test.mjs",
     "smoke": "node scripts/smoke.mjs",
     "smoke:admin": "node scripts/smoke-admin.mjs",
     "smoke:auth": "node scripts/smoke-auth.mjs",
